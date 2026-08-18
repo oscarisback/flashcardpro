@@ -37,6 +37,26 @@ st.markdown("""
         font-weight: 600;
         color: #000;
     }
+    .wrong-answer-highlight {
+        background-color: #FFD1D1;
+        border: 2px solid #FF4D4D;
+        color: #900C3F;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-weight: bold;
+        margin-top: 6px;
+        margin-bottom: 6px;
+    }
+    .correct-answer-highlight {
+        background-color: #D4EDDA;
+        border: 2px solid #28A745;
+        color: #155724;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-weight: bold;
+        margin-top: 6px;
+        margin-bottom: 6px;
+    }
     .mc-option {
         padding: 12px;
         border-radius: 8px;
@@ -543,9 +563,14 @@ def render_editor():
         elif card_type == "Multiple Choice":
             st.divider()
             options_raw = st.text_area("Options (One per line)", placeholder="Option 1\nOption 2\nOption 3", key="add_options_input")
-            new_answer = st.text_input("✅ Correct Answer (Exact text match)", key="add_mc_answer_input")
-            new_explanation = st.text_area("💡 Explanation (Optional)", key="add_explanation_input")
             new_options = [o.strip() for o in options_raw.splitlines() if o.strip()]
+            
+            if new_options:
+                new_answer = st.selectbox("✅ Correct Answer", new_options, key="add_mc_answer_input")
+            else:
+                new_answer = st.text_input("✅ Correct Answer (Exact text match)", key="add_mc_answer_input")
+                
+            new_explanation = st.text_area("💡 Explanation (Optional)", key="add_explanation_input")
 
         elif card_type == "Fill in Blank":
             st.divider()
@@ -574,6 +599,14 @@ def render_editor():
 
         if st.button("💾 Add Card to Deck", type="primary", use_container_width=True, key="submit_add_card_btn"):
             if new_question.strip() or (card_type == "Fill in Blank" and st.session_state.blank_builder_question.strip()):
+                if card_type == "Multiple Choice":
+                    if not new_options:
+                        st.error("Please add options for the multiple choice question!")
+                        st.stop()
+                    if new_answer.strip() not in new_options:
+                        st.error("Correct answer must match one of the options!")
+                        st.stop()
+
                 image_path = None
                 if uploaded_image is not None:
                     os.makedirs(UPLOADS_DIR, exist_ok=True)
@@ -611,7 +644,7 @@ def render_editor():
         with st.container(border=True):
             col_txt, col_edit, col_del = st.columns([4.5, 0.75, 0.75])
             with col_txt:
-                st.markdown(f"**#{idx+1} [{c['type']}] {c['question'][:80]}")
+                st.markdown(f"**#{idx+1} [{c['type']}]** {c['question'][:80]}")
             with col_edit:
                 if st.button("Edit", key=f"edit_btn_{idx}", use_container_width=True, help="✏️ Edit this card"):
                     st.session_state[f"editing_{idx}"] = not st.session_state.get(f"editing_{idx}", False)
@@ -642,49 +675,62 @@ def render_editor():
                         st.rerun()
 
                 elif c["type"] == "Multiple Choice":
-                    col1, col2 = st.columns([1, 1])
-                    with col1:
-                        new_question_edit = st.text_area("Question", value=c.get("question", ""), key=f"edit_q_{idx}", height=100)
-                    with col2:
-                        current_opts = c.get("options", [])
-                        current_ans = c.get("answer", "")
-                        ans_idx = current_opts.index(current_ans) if current_ans in current_opts else 0
-                        new_answer_edit = st.selectbox("✅ Correct Answer", current_opts, index=ans_idx if current_opts else 0, key=f"edit_a_{idx}")
-                    
-                    new_explanation_edit = st.text_area("💡 Explanation", value=c.get("explanation", ""), key=f"edit_exp_{idx}", height=80)
+                    current_options = [str(opt).strip() for opt in c.get("options", []) if str(opt).strip()]
+                    current_ans = str(c.get("answer", "")).strip()
+
+                    new_question_edit = st.text_area("Question", value=c.get("question", ""), key=f"edit_q_{idx}", height=100)
                     
                     st.subheader("📋 Manage Options")
-                    current_options = c.get("options", [])
-                    
+                    updated_options = []
                     for opt_idx, opt in enumerate(current_options):
                         opt_col1, opt_col2 = st.columns([4, 1])
                         with opt_col1:
-                            st.text(f"{opt_idx + 1}. {opt}")
+                            val = st.text_input(f"Option {opt_idx + 1}", value=opt, key=f"opt_val_{idx}_{opt_idx}")
+                            if val.strip():
+                                updated_options.append(val.strip())
                         with opt_col2:
                             if st.button("Delete", key=f"del_opt_{idx}_{opt_idx}", use_container_width=True, help="🗑️ Delete option"):
                                 current_options.pop(opt_idx)
+                                c["options"] = current_options
+                                if current_ans not in current_options and current_options:
+                                    c["answer"] = current_options[0]
                                 save_data(st.session_state.data)
                                 st.rerun()
-                    
+
                     st.write("**Add new option:**")
                     new_opt_col1, new_opt_col2 = st.columns([4, 1])
                     with new_opt_col1:
                         new_option = st.text_input("New option text", key=f"new_opt_{idx}")
                     with new_opt_col2:
-                        if st.button("Add", key=f"add_opt_{idx}", use_container_width=True, help="➕ Add option"):
-                            if new_option.strip() and new_option.strip() not in current_options:
-                                current_options.append(new_option.strip())
+                        if st.button("Add Option", key=f"add_opt_{idx}", use_container_width=True):
+                            if new_option.strip() and new_option.strip() not in updated_options:
+                                updated_options.append(new_option.strip())
+                                c["options"] = updated_options
                                 save_data(st.session_state.data)
                                 st.rerun()
-                    
+
+                    ans_idx = updated_options.index(current_ans) if current_ans in updated_options else 0
+                    if updated_options:
+                        new_answer_edit = st.selectbox("✅ Correct Answer", updated_options, index=ans_idx, key=f"edit_a_{idx}")
+                    else:
+                        new_answer_edit = ""
+                        st.warning("⚠️ Please add at least one option.")
+
+                    new_explanation_edit = st.text_area("💡 Explanation", value=c.get("explanation", ""), key=f"edit_exp_{idx}", height=80)
+
                     if st.button("💾 Save All Changes", type="primary", use_container_width=True, key=f"save_mc_edit_{idx}"):
-                        c["question"] = new_question_edit.strip()
-                        c["answer"] = new_answer_edit
-                        c["options"] = current_options
-                        c["explanation"] = new_explanation_edit.strip()
-                        save_data(st.session_state.data)
-                        st.session_state[f"editing_{idx}"] = False
-                        st.rerun()
+                        if not updated_options:
+                            st.error("Multiple choice questions require options!")
+                        elif not new_answer_edit:
+                            st.error("Please select a correct answer!")
+                        else:
+                            c["question"] = new_question_edit.strip()
+                            c["options"] = updated_options
+                            c["answer"] = new_answer_edit
+                            c["explanation"] = new_explanation_edit.strip()
+                            save_data(st.session_state.data)
+                            st.session_state[f"editing_{idx}"] = False
+                            st.rerun()
 
                 else:  # Fill in Blank
                     new_question_edit = st.text_area(
@@ -788,35 +834,29 @@ def render_review():
 
             if not st.session_state.show_srs:
                 if st.button("Check Answer", use_container_width=True, type="primary"):
-                    correct = card.get("answer", "")
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if selected_opt == correct:
-                            st.success("✅ Correct!")
-                        else:
-                            st.error(f"❌ Incorrect! Correct answer: **{correct}**")
-                    
-                    if card.get("explanation"):
-                        st.info(f"**Explanation:** {card.get('explanation')}")
-                    
+                    st.session_state[f"last_selected_{idx}"] = selected_opt
                     st.session_state.show_srs = True
                     st.rerun()
             else:
+                correct = str(card.get("answer", "")).strip()
+                user_selected = str(st.session_state.get(f"last_selected_{idx}", selected_opt)).strip()
+                
+                if user_selected == correct:
+                    st.markdown(f"<div class='correct-answer-highlight'>✅ Correct: {correct}</div>", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"<div class='wrong-answer-highlight'>❌ Your Answer: {user_selected}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div class='correct-answer-highlight'>✅ Correct Answer: {correct}</div>", unsafe_allow_html=True)
+                
+                if card.get("explanation"):
+                    st.info(f"**Explanation:** {card.get('explanation')}")
+                
                 render_srs_controls(card)
 
         else:  # Fill in Blank
             blanks = re.findall(r"\{(\d+):([^\}]+)\}", card["question"])
-            display_text = card["question"]
             
             if not st.session_state.reveal_blanks:
-                for num, ans in blanks:
-                    display_text = display_text.replace(f"{{{num}:{ans}}}", f"<span class='highlighted-answer'>{ans}</span>")
-                st.markdown(f"### {display_text}", unsafe_allow_html=True)
-                
-                if st.button("Hide Answers & Practice", use_container_width=True, type="primary"):
-                    st.session_state.reveal_blanks = True
-                    st.rerun()
-            else:
+                display_text = card["question"]
                 for num, ans in blanks:
                     display_text = display_text.replace(f"{{{num}:{ans}}}", " `[ ____ ]` ")
                 st.markdown(f"### {display_text}")
@@ -827,17 +867,32 @@ def render_review():
 
                 if not st.session_state.show_srs:
                     if st.button("Check Answer", use_container_width=True, type="primary"):
-                        all_correct = True
-                        for num, (val, target) in user_inputs.items():
-                            if val.strip().lower() != target.strip().lower():
-                                all_correct = False
-                                st.error(f"Blank #{num} Incorrect! Correct: `{target}`")
-                        if all_correct:
-                            st.success("✅ All Blanks Correct!")
+                        st.session_state[f"last_fib_inputs_{idx}"] = user_inputs
+                        st.session_state.reveal_blanks = True
                         st.session_state.show_srs = True
                         st.rerun()
-                else:
-                    render_srs_controls(card)
+            else:
+                saved_inputs = st.session_state.get(f"last_fib_inputs_{idx}", {})
+                all_correct = True
+                
+                for num, (val, target) in saved_inputs.items():
+                    user_val = val.strip()
+                    target_val = target.strip()
+                    if user_val.lower() != target_val.lower():
+                        all_correct = False
+                        st.markdown(f"<div class='wrong-answer-highlight'>❌ Blank #{num} Incorrect: '{user_val}' (Correct: '{target_val}')</div>", unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"<div class='correct-answer-highlight'>✅ Blank #{num} Correct: '{target_val}'</div>", unsafe_allow_html=True)
+                
+                if all_correct and saved_inputs:
+                    st.success("🎉 All Blanks Correct!")
+                
+                display_text = card["question"]
+                for num, ans in blanks:
+                    display_text = display_text.replace(f"{{{num}:{ans}}}", f"<span class='highlighted-answer'>{ans}</span>")
+                st.markdown(f"### {display_text}", unsafe_allow_html=True)
+                
+                render_srs_controls(card)
 
 def render_srs_controls(card):
     st.divider()
