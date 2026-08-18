@@ -195,16 +195,13 @@ def rename_folder(old_name, new_name, parent_path):
         save_data(st.session_state.data)
 
 def move_folder(folder_name, source_path, target_path_str):
-    # Get the folder to move
     source_dict = get_folder_dict(source_path) if source_path else st.session_state.data["files"]
     if folder_name not in source_dict:
         return
     
     folder_data = source_dict.pop(folder_name)
     
-    # Add to target
     if target_path_str == "Root (Unsorted)":
-        # Can't move to unsorted, it's not a real folder
         source_dict[folder_name] = folder_data
         return
     else:
@@ -288,113 +285,115 @@ def render_home():
         # Browse folders and decks
         def render_sidebar_tree(folder_dict, path):
             for name, info in list(folder_dict.items()):
+                current_path = path + [name]
+                path_key = "_".join(current_path)
+
                 with st.expander(f"📂 {name}", expanded=False):
-                    current_path = path + [name]
-                    
                     # Folder actions
                     col1, col2, col3 = st.columns(3)
                     with col1:
-                        if st.button("Rename", key=f"rename_folder_{name}_{id(current_path)}", use_container_width=True, help="✏️ Rename"):
-                            st.session_state[f"editing_rename_folder_{name}"] = not st.session_state.get(f"editing_rename_folder_{name}", False)
+                        if st.button("Rename", key=f"rename_folder_btn_{path_key}", use_container_width=True, help="✏️ Rename"):
+                            st.session_state[f"editing_rename_folder_{path_key}"] = not st.session_state.get(f"editing_rename_folder_{path_key}", False)
                             st.rerun()
                     with col2:
-                        if st.button("Move", key=f"move_folder_{name}_{id(current_path)}", use_container_width=True, help="📤 Move"):
-                            st.session_state[f"moving_folder_{name}_{id(current_path)}"] = not st.session_state.get(f"moving_folder_{name}_{id(current_path)}", False)
+                        if st.button("Move", key=f"move_folder_btn_{path_key}", use_container_width=True, help="📤 Move"):
+                            st.session_state[f"moving_folder_{path_key}"] = not st.session_state.get(f"moving_folder_{path_key}", False)
                             st.rerun()
                     with col3:
-                        if st.button("Delete", key=f"delete_folder_{name}_{id(current_path)}", use_container_width=True, help="🗑️ Delete"):
-                            if st.session_state.get(f"confirm_delete_folder_{name}"):
+                        if st.button("Delete", key=f"delete_folder_btn_{path_key}", use_container_width=True, help="🗑️ Delete"):
+                            if st.session_state.get(f"confirm_delete_folder_{path_key}"):
                                 delete_folder(name, path)
-                                st.session_state[f"confirm_delete_folder_{name}"] = False
+                                st.session_state[f"confirm_delete_folder_{path_key}"] = False
                                 st.rerun()
                             else:
-                                st.session_state[f"confirm_delete_folder_{name}"] = True
+                                st.session_state[f"confirm_delete_folder_{path_key}"] = True
                                 st.rerun()
                     
-                    if st.session_state.get(f"editing_rename_folder_{name}"):
+                    if st.session_state.get(f"editing_rename_folder_{path_key}"):
                         ren_col1, ren_col2 = st.columns([2, 1])
                         with ren_col1:
-                            new_name = st.text_input("New folder name", value=name, key=f"rename_input_folder_{name}", label_visibility="collapsed")
+                            new_name = st.text_input("New folder name", value=name, key=f"rename_input_folder_{path_key}", label_visibility="collapsed")
                         with ren_col2:
-                            if st.button("✓ Save", key=f"save_rename_folder_{name}", use_container_width=True):
+                            if st.button("✓ Save", key=f"save_rename_folder_{path_key}", use_container_width=True):
                                 if new_name.strip() and new_name != name:
                                     rename_folder(name, new_name, path)
-                                st.session_state[f"editing_rename_folder_{name}"] = False
+                                st.session_state[f"editing_rename_folder_{path_key}"] = False
                                 st.rerun()
                     
-                    if st.session_state.get(f"moving_folder_{name}_{id(current_path)}"):
-                        target_folder = st.selectbox("Move to:", [p for p in list_all_folder_paths() if p != "Root (Unsorted)" and p != " / ".join(path + [name])], key=f"move_target_folder_{name}_{id(current_path)}")
+                    if st.session_state.get(f"moving_folder_{path_key}"):
+                        target_folder = st.selectbox("Move to:", [p for p in list_all_folder_paths() if p != "Root (Unsorted)" and p != " / ".join(current_path)], key=f"move_target_folder_{path_key}")
                         move_col1, move_col2 = st.columns([1, 1])
                         with move_col1:
-                            if st.button("✓ Move", key=f"confirm_move_folder_{name}_{id(current_path)}", use_container_width=True):
+                            if st.button("✓ Move", key=f"confirm_move_folder_{path_key}", use_container_width=True):
                                 move_folder(name, path, target_folder)
-                                st.session_state[f"moving_folder_{name}_{id(current_path)}"] = False
+                                st.session_state[f"moving_folder_{path_key}"] = False
                                 st.rerun()
                         with move_col2:
-                            if st.button("✕ Cancel", key=f"cancel_move_folder_{name}_{id(current_path)}", use_container_width=True):
-                                st.session_state[f"moving_folder_{name}_{id(current_path)}"] = False
+                            if st.button("✕ Cancel", key=f"cancel_move_folder_{path_key}", use_container_width=True):
+                                st.session_state[f"moving_folder_{path_key}"] = False
                                 st.rerun()
 
                     # Decks in this folder
                     decks = info.get("decks", {})
                     for deck_name in list(decks.keys()):
+                        deck_key = f"{path_key}_{deck_name}"
                         deck_col1, deck_col2, deck_col3, deck_col4, deck_col5, deck_col6 = st.columns([2, 1, 1, 1, 1, 1])
                         with deck_col1:
-                            if st.button(f"{deck_name}", key=f"open_deck_{deck_name}_{id(current_path)}", use_container_width=True):
+                            if st.button(f"{deck_name}", key=f"open_deck_{deck_key}", use_container_width=True):
                                 navigate_to("editor", deck_name, current_path)
                         with deck_col2:
-                            if st.button("📖", key=f"review_{deck_name}_{id(current_path)}", help="Review (Due)", use_container_width=True):
+                            if st.button("📖", key=f"review_{deck_key}", help="Review (Due)", use_container_width=True):
                                 st.session_state.review_cards = [c for c in decks[deck_name] if c.get("next_review", 0) <= time.time()]
                                 st.session_state.review_idx = 0
                                 st.session_state.review_mode = "study"
                                 navigate_to("review", deck_name, current_path)
                         with deck_col3:
-                            if st.button("🎯", key=f"practice_{deck_name}_{id(current_path)}", help="Practice", use_container_width=True):
+                            if st.button("🎯", key=f"practice_{deck_key}", help="Practice", use_container_width=True):
                                 st.session_state.review_cards = decks[deck_name].copy()
                                 random.shuffle(st.session_state.review_cards)
                                 st.session_state.review_idx = 0
                                 st.session_state.review_mode = "practice"
                                 navigate_to("review", deck_name, current_path)
                         with deck_col4:
-                            if st.button("✏️ ", key=f"rename_deck_{deck_name}_{id(current_path)}", help="Rename", use_container_width=True):
-                                st.session_state[f"editing_rename_deck_{deck_name}_{id(current_path)}"] = not st.session_state.get(f"editing_rename_deck_{deck_name}_{id(current_path)}", False)
+                            if st.button("✏️ ", key=f"rename_deck_{deck_key}", help="Rename", use_container_width=True):
+                                st.session_state[f"editing_rename_deck_{deck_key}"] = not st.session_state.get(f"editing_rename_deck_{deck_key}", False)
                                 st.rerun()
                         with deck_col5:
-                            if st.button("📤 ", key=f"move_deck_{deck_name}_{id(current_path)}", help="Move", use_container_width=True):
-                                st.session_state[f"moving_deck_{deck_name}_{id(current_path)}"] = not st.session_state.get(f"moving_deck_{deck_name}_{id(current_path)}", False)
+                            if st.button("📤 ", key=f"move_deck_{deck_key}", help="Move", use_container_width=True):
+                                st.session_state[f"moving_deck_{deck_key}"] = not st.session_state.get(f"moving_deck_{deck_key}", False)
                                 st.rerun()
                         with deck_col6:
-                            if st.button("🗑️ ", key=f"delete_deck_{deck_name}_{id(current_path)}", help="Delete", use_container_width=True):
-                                if st.session_state.get(f"confirm_delete_deck_{deck_name}_{id(current_path)}"):
+                            if st.button("🗑️ ", key=f"delete_deck_{deck_key}", help="Delete", use_container_width=True):
+                                if st.session_state.get(f"confirm_delete_deck_{deck_key}"):
                                     delete_deck(deck_name, current_path)
-                                    st.session_state[f"confirm_delete_deck_{deck_name}_{id(current_path)}"] = False
+                                    st.session_state[f"confirm_delete_deck_{deck_key}"] = False
                                     st.rerun()
                                 else:
-                                    st.session_state[f"confirm_delete_deck_{deck_name}_{id(current_path)}"] = True
+                                    st.session_state[f"confirm_delete_deck_{deck_key}"] = True
                                     st.rerun()
                         
-                        if st.session_state.get(f"editing_rename_deck_{deck_name}_{id(current_path)}"):
+                        if st.session_state.get(f"editing_rename_deck_{deck_key}"):
                             ren_col1, ren_col2 = st.columns([2, 1])
                             with ren_col1:
-                                new_deck_name = st.text_input("New name", value=deck_name, key=f"rename_input_deck_{deck_name}_{id(current_path)}", label_visibility="collapsed")
+                                new_deck_name = st.text_input("New name", value=deck_name, key=f"rename_input_deck_{deck_key}", label_visibility="collapsed")
                             with ren_col2:
-                                if st.button("✓ Save", key=f"save_rename_deck_{deck_name}_{id(current_path)}", use_container_width=True):
+                                if st.button("✓ Save", key=f"save_rename_deck_{deck_key}", use_container_width=True):
                                     if new_deck_name.strip() and new_deck_name != deck_name:
                                         rename_deck(deck_name, new_deck_name, current_path)
-                                    st.session_state[f"editing_rename_deck_{deck_name}_{id(current_path)}"] = False
+                                    st.session_state[f"editing_rename_deck_{deck_key}"] = False
                                     st.rerun()
                         
-                        if st.session_state.get(f"moving_deck_{deck_name}_{id(current_path)}"):
-                            target_folder = st.selectbox("Move to:", list_all_folder_paths(), key=f"move_target_{deck_name}_{id(current_path)}")
+                        if st.session_state.get(f"moving_deck_{deck_key}"):
+                            target_folder = st.selectbox("Move to:", list_all_folder_paths(), key=f"move_target_{deck_key}")
                             move_col1, move_col2 = st.columns([1, 1])
                             with move_col1:
-                                if st.button("✓ Move", key=f"confirm_move_{deck_name}_{id(current_path)}", use_container_width=True):
+                                if st.button("✓ Move", key=f"confirm_move_{deck_key}", use_container_width=True):
                                     move_deck(deck_name, current_path, target_folder)
-                                    st.session_state[f"moving_deck_{deck_name}_{id(current_path)}"] = False
+                                    st.session_state[f"moving_deck_{deck_key}"] = False
                                     st.rerun()
                             with move_col2:
-                                if st.button("✕ Cancel", key=f"cancel_move_{deck_name}_{id(current_path)}", use_container_width=True):
-                                    st.session_state[f"moving_deck_{deck_name}_{id(current_path)}"] = False
+                                if st.button("✕ Cancel", key=f"cancel_move_{deck_key}", use_container_width=True):
+                                    st.session_state[f"moving_deck_{deck_key}"] = False
                                     st.rerun()
 
                     # Nested folders
@@ -408,63 +407,64 @@ def render_home():
         st.divider()
         st.subheader("Unsorted Decks")
         for deck_name in list(st.session_state.data["unsorted_decks"].keys()):
+            unsorted_key = f"unsorted_{deck_name}"
             deck_col1, deck_col2, deck_col3, deck_col4, deck_col5, deck_col6 = st.columns([2, 1, 1, 1, 1, 1])
             with deck_col1:
-                if st.button(f"{deck_name}", key=f"open_unsorted_{deck_name}", use_container_width=True):
+                if st.button(f"{deck_name}", key=f"open_{unsorted_key}", use_container_width=True):
                     navigate_to("editor", deck_name, "unsorted")
             with deck_col2:
-                if st.button("📖", key=f"review_unsorted_{deck_name}", help="Review (Due)", use_container_width=True):
+                if st.button("📖", key=f"review_{unsorted_key}", help="Review (Due)", use_container_width=True):
                     st.session_state.review_cards = [c for c in st.session_state.data["unsorted_decks"][deck_name] if c.get("next_review", 0) <= time.time()]
                     st.session_state.review_idx = 0
                     st.session_state.review_mode = "study"
                     navigate_to("review", deck_name, "unsorted")
             with deck_col3:
-                if st.button("🎯", key=f"practice_unsorted_{deck_name}", help="Practice", use_container_width=True):
+                if st.button("🎯", key=f"practice_{unsorted_key}", help="Practice", use_container_width=True):
                     st.session_state.review_cards = st.session_state.data["unsorted_decks"][deck_name].copy()
                     random.shuffle(st.session_state.review_cards)
                     st.session_state.review_idx = 0
                     st.session_state.review_mode = "practice"
                     navigate_to("review", deck_name, "unsorted")
             with deck_col4:
-                if st.button("✏️ ", key=f"rename_unsorted_{deck_name}", help="Rename", use_container_width=True):
-                    st.session_state[f"editing_rename_unsorted_{deck_name}"] = not st.session_state.get(f"editing_rename_unsorted_{deck_name}", False)
+                if st.button("✏️ ", key=f"rename_{unsorted_key}", help="Rename", use_container_width=True):
+                    st.session_state[f"editing_rename_{unsorted_key}"] = not st.session_state.get(f"editing_rename_{unsorted_key}", False)
                     st.rerun()
             with deck_col5:
-                if st.button("📤 ", key=f"move_unsorted_{deck_name}", help="Move", use_container_width=True):
-                    st.session_state[f"moving_unsorted_{deck_name}"] = not st.session_state.get(f"moving_unsorted_{deck_name}", False)
+                if st.button("📤 ", key=f"move_{unsorted_key}", help="Move", use_container_width=True):
+                    st.session_state[f"moving_{unsorted_key}"] = not st.session_state.get(f"moving_{unsorted_key}", False)
                     st.rerun()
             with deck_col6:
-                if st.button("🗑️ ", key=f"delete_unsorted_{deck_name}", help="Delete", use_container_width=True):
-                    if st.session_state.get(f"confirm_delete_unsorted_{deck_name}"):
+                if st.button("🗑️ ", key=f"delete_{unsorted_key}", help="Delete", use_container_width=True):
+                    if st.session_state.get(f"confirm_delete_{unsorted_key}"):
                         delete_deck(deck_name, "unsorted")
-                        st.session_state[f"confirm_delete_unsorted_{deck_name}"] = False
+                        st.session_state[f"confirm_delete_{unsorted_key}"] = False
                         st.rerun()
                     else:
-                        st.session_state[f"confirm_delete_unsorted_{deck_name}"] = True
+                        st.session_state[f"confirm_delete_{unsorted_key}"] = True
                         st.rerun()
             
-            if st.session_state.get(f"editing_rename_unsorted_{deck_name}"):
+            if st.session_state.get(f"editing_rename_{unsorted_key}"):
                 ren_col1, ren_col2 = st.columns([2, 1])
                 with ren_col1:
-                    new_deck_name = st.text_input("New name", value=deck_name, key=f"rename_input_unsorted_{deck_name}", label_visibility="collapsed")
+                    new_deck_name = st.text_input("New name", value=deck_name, key=f"rename_input_{unsorted_key}", label_visibility="collapsed")
                 with ren_col2:
-                    if st.button("✓ Save", key=f"save_rename_unsorted_{deck_name}", use_container_width=True):
+                    if st.button("✓ Save", key=f"save_rename_{unsorted_key}", use_container_width=True):
                         if new_deck_name.strip() and new_deck_name != deck_name:
                             rename_deck(deck_name, new_deck_name, "unsorted")
-                        st.session_state[f"editing_rename_unsorted_{deck_name}"] = False
+                        st.session_state[f"editing_rename_{unsorted_key}"] = False
                         st.rerun()
             
-            if st.session_state.get(f"moving_unsorted_{deck_name}"):
-                target_folder = st.selectbox("Move to:", list_all_folder_paths(), key=f"move_target_unsorted_{deck_name}")
+            if st.session_state.get(f"moving_{unsorted_key}"):
+                target_folder = st.selectbox("Move to:", list_all_folder_paths(), key=f"move_target_{unsorted_key}")
                 move_col1, move_col2 = st.columns([1, 1])
                 with move_col1:
-                    if st.button("✓ Move", key=f"confirm_move_unsorted_{deck_name}", use_container_width=True):
+                    if st.button("✓ Move", key=f"confirm_move_{unsorted_key}", use_container_width=True):
                         move_deck(deck_name, "unsorted", target_folder)
-                        st.session_state[f"moving_unsorted_{deck_name}"] = False
+                        st.session_state[f"moving_{unsorted_key}"] = False
                         st.rerun()
                 with move_col2:
-                    if st.button("✕ Cancel", key=f"cancel_move_unsorted_{deck_name}", use_container_width=True):
-                        st.session_state[f"moving_unsorted_{deck_name}"] = False
+                    if st.button("✕ Cancel", key=f"cancel_move_{unsorted_key}", use_container_width=True):
+                        st.session_state[f"moving_{unsorted_key}"] = False
                         st.rerun()
 
     # Main Content
@@ -506,7 +506,6 @@ def render_editor():
     deck_name = st.session_state.active_deck
     location = st.session_state.deck_location
 
-    # Back button
     col_back, col_title = st.columns([1, 4])
     with col_back:
         if st.button("← Back", use_container_width=True):
@@ -518,17 +517,14 @@ def render_editor():
 
     cards = get_cards(deck_name, location)
 
-    # Export deck code
     with st.expander("📤 Export Deck Code"):
         code = export_deck_code(deck_name, cards)
         st.code(code)
         st.write("Share this code with others to import your deck!")
 
-    # Add new card
     with st.expander("➕ Add New Card", expanded=True):
         card_type = st.selectbox("Card Type", ["Standard", "Fill in Blank", "Multiple Choice"], key="add_card_type")
         
-        # Common field for all card types
         question_placeholder = "Type your question here..."
         if card_type == "Fill in Blank":
             question_placeholder = "Example: The capital of {1:France} is {2:Paris}"
@@ -540,7 +536,6 @@ def render_editor():
         new_options = []
         new_explanation = ""
 
-        # Conditional fields based on card type
         if card_type == "Standard":
             st.divider()
             new_answer = st.text_area("Answer", key="add_answer_input")
@@ -554,7 +549,6 @@ def render_editor():
 
         elif card_type == "Fill in Blank":
             st.divider()
-            # Interactive blank builder
             st.subheader("🖱️ Interactive Builder")
             
             blank_col1, blank_col2, blank_col3 = st.columns([2, 1, 1])
@@ -633,7 +627,6 @@ def render_editor():
                         st.session_state[f"confirm_delete_card_{idx}"] = True
                         st.rerun()
 
-            # Edit card section
             if st.session_state.get(f"editing_{idx}"):
                 st.divider()
                 st.write("**✏️ Edit Card**")
@@ -653,7 +646,10 @@ def render_editor():
                     with col1:
                         new_question_edit = st.text_area("Question", value=c.get("question", ""), key=f"edit_q_{idx}", height=100)
                     with col2:
-                        new_answer_edit = st.selectbox("✅ Correct Answer", c.get("options", []), key=f"edit_a_{idx}")
+                        current_opts = c.get("options", [])
+                        current_ans = c.get("answer", "")
+                        ans_idx = current_opts.index(current_ans) if current_ans in current_opts else 0
+                        new_answer_edit = st.selectbox("✅ Correct Answer", current_opts, index=ans_idx if current_opts else 0, key=f"edit_a_{idx}")
                     
                     new_explanation_edit = st.text_area("💡 Explanation", value=c.get("explanation", ""), key=f"edit_exp_{idx}", height=80)
                     
@@ -779,10 +775,15 @@ def render_review():
 
         elif card["type"] == "Multiple Choice":
             st.markdown(f"### {card['question']}")
-            opts = card.get("options", [])
-            shuffled_opts = opts.copy()
-            random.shuffle(shuffled_opts)
             
+            # Persist option order so reshuffling doesn't break input state
+            opt_key = f"mc_opts_{idx}_{st.session_state.active_deck}"
+            if opt_key not in st.session_state:
+                opts = card.get("options", []).copy()
+                random.shuffle(opts)
+                st.session_state[opt_key] = opts
+            
+            shuffled_opts = st.session_state[opt_key]
             selected_opt = st.radio("Choose an answer:", shuffled_opts, key=f"mc_{idx}")
 
             if not st.session_state.show_srs:
@@ -860,7 +861,6 @@ def render_srs_controls(card):
             apply_srs(card, 5)
 
 def apply_srs(card, quality):
-    # Only apply SRS in study mode
     if st.session_state.review_mode == "study":
         ease = card.get("ease_factor", 2.5)
         interval = card.get("interval", 1)
