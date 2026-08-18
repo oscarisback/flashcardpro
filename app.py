@@ -1,10 +1,13 @@
+import base64
 import json
 import os
 import random
 import re
 import time
-import base64
+import urllib.parse
+import zlib
 import streamlit as st
+import streamlit.components.v1 as components
 from PIL import Image
 from streamlit_drawable_canvas import st_canvas
 
@@ -117,6 +120,22 @@ if "blank_builder_count" not in st.session_state:
 if "review_mode" not in st.session_state:
     st.session_state.review_mode = "study"
 
+# URL Parameter Import Handler
+def check_and_handle_url_import():
+    query_params = st.query_params
+    if "deck" in query_params:
+        try:
+            encoded_code = query_params["deck"]
+            success, message = import_any_code(encoded_code, "unsorted")
+            if success:
+                st.toast(f"🎉 {message}", icon="✅")
+            else:
+                st.toast(f"❌ Failed to import deck from link: {message}", icon="⚠️")
+            st.query_params.clear()
+        except Exception as e:
+            st.toast(f"Failed to process link import: {str(e)}", icon="⚠️")
+            st.query_params.clear()
+
 # Helper Functions
 def get_folder_dict(path):
     curr = st.session_state.data["files"]
@@ -187,6 +206,11 @@ def delete_deck(deck_name, path):
             folder_dict[folder_name]["decks"].pop(deck_name, None)
     save_data(st.session_state.data)
 
+def shuffle_deck(deck_name, path):
+    cards = get_cards(deck_name, path)
+    random.shuffle(cards)
+    save_data(st.session_state.data)
+
 def rename_deck(old_name, new_name, path):
     if not new_name.strip() or old_name == new_name:
         return
@@ -234,32 +258,106 @@ def move_folder(folder_name, source_path, target_path_str):
     
     save_data(st.session_state.data)
 
+# Export / Import & URL Link Generators
 def export_deck_code(deck_name, cards):
-    payload = {"name": deck_name, "cards": cards}
-    raw_json = json.dumps(payload, ensure_ascii=False)
-    encoded = base64.b64encode(raw_json.encode("utf-8")).decode("utf-8")
-    return encoded
+    minified_cards = []
+    for c in cards:
+        card_data = {
+            "t": c.get("type", "Standard"),
+            "q": c.get("question", "")
+        }
+        if "answer" in c and c["answer"]:
+            card_data["a"] = c["answer"]
+        if "options" in c and c["options"]:
+            card_data["o"] = c["options"]
+        if "explanation" in c and c["explanation"]:
+            card_data["e"] = c["explanation"]
+        if "image" in c and c["image"]:
+            card_data["i"] = c["image"]
+            
+        minified_cards.append(card_data)
 
-def import_deck_code(encoded_code, target_path):
+    payload = {
+        "type": "deck",
+        "n": deck_name,
+        "c": minified_cards
+    }
+    
+    raw_json = json.dumps(payload, separators=(',', ':'), ensure_ascii=False).encode("utf-8")
+    compressed = zlib.compress(raw_json, level=9)
+    return base64.urlsafe_b64encode(compressed).decode("utf-8")
+
+def export_deck_link(deck_name, cards, base_url="http://localhost:8501"):
+    encoded_code = export_deck_code(deck_name, cards)
+    return f"{base_url}/?deck={urllib.parse.quote(encoded_code)}"
+
+def export_folder_code(folder_name, folder_data):
+    payload = {"type": "folder", "n": folder_name, "data": folder_data}
+    raw_json = json.dumps(payload, separators=(',', ':'), ensure_ascii=False).encode("utf-8")
+    compressed = zlib.compress(raw_json, level=9)
+    return base64.urlsafe_b64encode(compressed).decode("utf-8")
+
+def import_any_code(encoded_code, target_path):
     try:
-        decoded_json = base64.b64decode(encoded_code.strip().encode("utf-8")).decode("utf-8")
-        payload = json.loads(decoded_json)
-        deck_name = payload.get("name", "Imported Deck")
-        cards = payload.get("cards", [])
+        clean_code = encoded_code.strip().encode("utf-8")
+        
+        try:
+            decoded_bytes = base64.urlsafe_b64decode(clean_code)
+        except Exception:
+            try:
+                decoded_bytes = base64.b85decode(clean_code)
+            except Exception:
+                decoded_bytes = base64.b64decode(clean_code)
 
-        if target_path == "unsorted":
-            st.session_state.data["unsorted_decks"][deck_name] = cards
+        try:
+            decompressed = zlib.decompress(decoded_bytes)
+            payload = json.loads(decompressed.decode("utf-8"))
+        except Exception:
+            payload = json.loads(decoded_bytes.decode("utf-8"))
+
+        item_type = payload.get("type", "deck")
+        
+        if item_type == "folder":
+            folder_name = payload.get("n", payload.get("name", "Imported Folder"))
+            folder_data = payload.get("data", {})
+            target_dict = get_folder_dict(target_path) if target_path != "unsorted" else st.session_state.data["files"]
+            target_dict[folder_name] = folder_data
+            save_data(st.session_state.data)
+            return True, f"Successfully imported folder '{folder_name}'!"
         else:
-            folder_dict = get_folder_dict(target_path[:-1]) if len(target_path) > 1 else st.session_state.data["files"]
-            folder_name = target_path[-1] if target_path else ""
-            if "decks" not in folder_dict[folder_name]:
-                folder_dict[folder_name]["decks"] = {}
-            folder_dict[folder_name]["decks"][deck_name] = cards
+            deck_name = payload.get("n", payload.get("name", "Imported Deck"))
+            raw_cards = payload.get("c", payload.get("cards", []))
+            
+            cards = []
+            for c in raw_cards:
+                if "t" in c:
+                    card = {
+                        "type": c.get("t", "Standard"),
+                        "question": c.get("q", ""),
+                        "answer": c.get("a", ""),
+                        "options": c.get("o", []),
+                        "explanation": c.get("e", ""),
+                        "image": c.get("i", None),
+                        "interval": 1,
+                        "ease_factor": 2.5,
+                        "next_review": time.time()
+                    }
+                else:
+                    card = c
+                cards.append(card)
 
-        save_data(st.session_state.data)
-        return True, f"Successfully imported '{deck_name}' with {len(cards)} cards!"
+            if target_path == "unsorted":
+                st.session_state.data["unsorted_decks"][deck_name] = cards
+            else:
+                folder_dict = get_folder_dict(target_path[:-1]) if len(target_path) > 1 else st.session_state.data["files"]
+                folder_name = target_path[-1] if target_path else ""
+                if "decks" not in folder_dict[folder_name]:
+                    folder_dict[folder_name]["decks"] = {}
+                folder_dict[folder_name]["decks"][deck_name] = cards
+            save_data(st.session_state.data)
+            return True, f"Successfully imported deck '{deck_name}' with {len(cards)} cards!"
     except Exception as e:
-        return False, f"Invalid code: {str(e)}"
+        return False, f"Invalid code/link payload: {str(e)}"
 
 def navigate_to(page, deck_name=None, location=None):
     st.session_state.current_page = page
@@ -270,6 +368,9 @@ def navigate_to(page, deck_name=None, location=None):
         st.session_state.active_deck = deck_name
     if location:
         st.session_state.deck_location = location
+
+# Run URL import check on app refresh
+check_and_handle_url_import()
 
 # Page: Home (Dashboard)
 def render_home():
@@ -309,18 +410,21 @@ def render_home():
                 path_key = "_".join(current_path)
 
                 with st.expander(f"📂 {name}", expanded=False):
-                    # Folder actions
-                    col1, col2, col3 = st.columns(3)
+                    col1, col2, col3, col4 = st.columns(4)
                     with col1:
-                        if st.button("Rename", key=f"rename_folder_btn_{path_key}", use_container_width=True, help="✏️ Rename"):
+                        if st.button("✏️", key=f"rename_folder_btn_{path_key}", use_container_width=True, help="Rename Folder"):
                             st.session_state[f"editing_rename_folder_{path_key}"] = not st.session_state.get(f"editing_rename_folder_{path_key}", False)
                             st.rerun()
                     with col2:
-                        if st.button("Move", key=f"move_folder_btn_{path_key}", use_container_width=True, help="📤 Move"):
+                        if st.button("📤", key=f"move_folder_btn_{path_key}", use_container_width=True, help="Move Folder"):
                             st.session_state[f"moving_folder_{path_key}"] = not st.session_state.get(f"moving_folder_{path_key}", False)
                             st.rerun()
                     with col3:
-                        if st.button("Delete", key=f"delete_folder_btn_{path_key}", use_container_width=True, help="🗑️ Delete"):
+                        if st.button("📋", key=f"code_folder_btn_{path_key}", use_container_width=True, help="Get Folder Code"):
+                            st.session_state[f"show_code_folder_{path_key}"] = not st.session_state.get(f"show_code_folder_{path_key}", False)
+                            st.rerun()
+                    with col4:
+                        if st.button("🗑️", key=f"delete_folder_btn_{path_key}", use_container_width=True, help="Delete Folder"):
                             if st.session_state.get(f"confirm_delete_folder_{path_key}"):
                                 delete_folder(name, path)
                                 st.session_state[f"confirm_delete_folder_{path_key}"] = False
@@ -328,6 +432,9 @@ def render_home():
                             else:
                                 st.session_state[f"confirm_delete_folder_{path_key}"] = True
                                 st.rerun()
+
+                    if st.session_state.get(f"show_code_folder_{path_key}"):
+                        st.code(export_folder_code(name, info))
                     
                     if st.session_state.get(f"editing_rename_folder_{path_key}"):
                         ren_col1, ren_col2 = st.columns([2, 1])
@@ -357,33 +464,38 @@ def render_home():
                     decks = info.get("decks", {})
                     for deck_name in list(decks.keys()):
                         deck_key = f"{path_key}_{deck_name}"
-                        deck_col1, deck_col2, deck_col3, deck_col4, deck_col5, deck_col6 = st.columns([2, 1, 1, 1, 1, 1])
+                        deck_col1, deck_col2, deck_col3, deck_col4, deck_col5, deck_col6, deck_col7 = st.columns([2, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8])
                         with deck_col1:
                             if st.button(f"{deck_name}", key=f"open_deck_{deck_key}", use_container_width=True):
                                 navigate_to("editor", deck_name, current_path)
                         with deck_col2:
+                            if st.button("🔀", key=f"shuffle_{deck_key}", help="Shuffle Deck Cards", use_container_width=True):
+                                shuffle_deck(deck_name, current_path)
+                                st.success("Shuffled!")
+                                st.rerun()
+                        with deck_col3:
                             if st.button("📖", key=f"review_{deck_key}", help="Review (Due)", use_container_width=True):
                                 st.session_state.review_cards = [c for c in decks[deck_name] if c.get("next_review", 0) <= time.time()]
                                 st.session_state.review_idx = 0
                                 st.session_state.review_mode = "study"
                                 navigate_to("review", deck_name, current_path)
-                        with deck_col3:
+                        with deck_col4:
                             if st.button("🎯", key=f"practice_{deck_key}", help="Practice", use_container_width=True):
                                 st.session_state.review_cards = decks[deck_name].copy()
                                 random.shuffle(st.session_state.review_cards)
                                 st.session_state.review_idx = 0
                                 st.session_state.review_mode = "practice"
                                 navigate_to("review", deck_name, current_path)
-                        with deck_col4:
-                            if st.button("✏️ ", key=f"rename_deck_{deck_key}", help="Rename", use_container_width=True):
+                        with deck_col5:
+                            if st.button("✏️", key=f"rename_deck_{deck_key}", help="Rename", use_container_width=True):
                                 st.session_state[f"editing_rename_deck_{deck_key}"] = not st.session_state.get(f"editing_rename_deck_{deck_key}", False)
                                 st.rerun()
-                        with deck_col5:
-                            if st.button("📤 ", key=f"move_deck_{deck_key}", help="Move", use_container_width=True):
+                        with deck_col6:
+                            if st.button("📤", key=f"move_deck_{deck_key}", help="Move", use_container_width=True):
                                 st.session_state[f"moving_deck_{deck_key}"] = not st.session_state.get(f"moving_deck_{deck_key}", False)
                                 st.rerun()
-                        with deck_col6:
-                            if st.button("🗑️ ", key=f"delete_deck_{deck_key}", help="Delete", use_container_width=True):
+                        with deck_col7:
+                            if st.button("🗑️", key=f"delete_deck_{deck_key}", help="Delete", use_container_width=True):
                                 if st.session_state.get(f"confirm_delete_deck_{deck_key}"):
                                     delete_deck(deck_name, current_path)
                                     st.session_state[f"confirm_delete_deck_{deck_key}"] = False
@@ -428,33 +540,38 @@ def render_home():
         st.subheader("Unsorted Decks")
         for deck_name in list(st.session_state.data["unsorted_decks"].keys()):
             unsorted_key = f"unsorted_{deck_name}"
-            deck_col1, deck_col2, deck_col3, deck_col4, deck_col5, deck_col6 = st.columns([2, 1, 1, 1, 1, 1])
+            deck_col1, deck_col2, deck_col3, deck_col4, deck_col5, deck_col6, deck_col7 = st.columns([2, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8])
             with deck_col1:
                 if st.button(f"{deck_name}", key=f"open_{unsorted_key}", use_container_width=True):
                     navigate_to("editor", deck_name, "unsorted")
             with deck_col2:
+                if st.button("🔀", key=f"shuffle_{unsorted_key}", help="Shuffle Deck Cards", use_container_width=True):
+                    shuffle_deck(deck_name, "unsorted")
+                    st.success("Shuffled!")
+                    st.rerun()
+            with deck_col3:
                 if st.button("📖", key=f"review_{unsorted_key}", help="Review (Due)", use_container_width=True):
                     st.session_state.review_cards = [c for c in st.session_state.data["unsorted_decks"][deck_name] if c.get("next_review", 0) <= time.time()]
                     st.session_state.review_idx = 0
                     st.session_state.review_mode = "study"
                     navigate_to("review", deck_name, "unsorted")
-            with deck_col3:
+            with deck_col4:
                 if st.button("🎯", key=f"practice_{unsorted_key}", help="Practice", use_container_width=True):
                     st.session_state.review_cards = st.session_state.data["unsorted_decks"][deck_name].copy()
                     random.shuffle(st.session_state.review_cards)
                     st.session_state.review_idx = 0
                     st.session_state.review_mode = "practice"
                     navigate_to("review", deck_name, "unsorted")
-            with deck_col4:
-                if st.button("✏️ ", key=f"rename_{unsorted_key}", help="Rename", use_container_width=True):
+            with deck_col5:
+                if st.button("✏️", key=f"rename_{unsorted_key}", help="Rename", use_container_width=True):
                     st.session_state[f"editing_rename_{unsorted_key}"] = not st.session_state.get(f"editing_rename_{unsorted_key}", False)
                     st.rerun()
-            with deck_col5:
-                if st.button("📤 ", key=f"move_{unsorted_key}", help="Move", use_container_width=True):
+            with deck_col6:
+                if st.button("📤", key=f"move_{unsorted_key}", help="Move", use_container_width=True):
                     st.session_state[f"moving_{unsorted_key}"] = not st.session_state.get(f"moving_{unsorted_key}", False)
                     st.rerun()
-            with deck_col6:
-                if st.button("🗑️ ", key=f"delete_{unsorted_key}", help="Delete", use_container_width=True):
+            with deck_col7:
+                if st.button("🗑️", key=f"delete_{unsorted_key}", help="Delete", use_container_width=True):
                     if st.session_state.get(f"confirm_delete_{unsorted_key}"):
                         delete_deck(deck_name, "unsorted")
                         st.session_state[f"confirm_delete_{unsorted_key}"] = False
@@ -508,13 +625,18 @@ def render_home():
                     st.rerun()
 
     with col2:
-        with st.expander("📥 Import Deck from Code", expanded=False):
-            import_code = st.text_area("Paste your deck code here", key="import_code_input")
+        with st.expander("📥 Import Deck or Folder from Code / Link", expanded=False):
+            import_code = st.text_area("Paste code or shareable link parameter here", key="import_code_input")
             target_import = st.selectbox("Import to", list_all_folder_paths(), key="import_target")
-            if st.button("Import Deck", use_container_width=True):
+            if st.button("Import Item", use_container_width=True):
                 if import_code.strip():
+                    # Strip URL prefix if user pastes full share link
+                    clean_input = import_code.strip()
+                    if "?deck=" in clean_input:
+                        clean_input = clean_input.split("?deck=")[-1]
+
                     target_path = "unsorted" if target_import == "Root (Unsorted)" else target_import.split(" / ")
-                    success, message = import_deck_code(import_code, target_path)
+                    success, message = import_any_code(clean_input, target_path)
                     if success:
                         st.success(message)
                         st.rerun()
@@ -526,28 +648,41 @@ def render_editor():
     deck_name = st.session_state.active_deck
     location = st.session_state.deck_location
 
-    col_back, col_title = st.columns([1, 4])
+    col_back, col_title, col_shuffle = st.columns([1, 3, 1])
     with col_back:
         if st.button("← Back", use_container_width=True):
             navigate_to("home")
     with col_title:
         st.title(f"📝 Editing: {deck_name}")
+    with col_shuffle:
+        if st.button("🔀 Shuffle Deck", use_container_width=True):
+            shuffle_deck(deck_name, location)
+            st.success("Deck shuffled!")
+            st.rerun()
 
     st.write(f"Location: {' / '.join(location) if location != 'unsorted' else 'Unsorted'}")
 
     cards = get_cards(deck_name, location)
 
-    with st.expander("📤 Export Deck Code"):
-        code = export_deck_code(deck_name, cards)
-        st.code(code)
-        st.write("Share this code with others to import your deck!")
+    with st.expander("🔗 Share Deck (Link & Code)"):
+        app_domain = st.text_input("App Base URL", value="https://your-app-name.streamlit.app", help="Replace with your deployed Streamlit URL")
+        
+        share_link = export_deck_link(deck_name, cards, base_url=app_domain)
+        export_code = export_deck_code(deck_name, cards)
+
+        st.subheader("🌐 Shareable Direct Link")
+        st.code(share_link)
+        st.caption("Anyone clicking this link will automatically import this deck when opening your app.")
+
+        st.subheader("📋 Raw Export Code")
+        st.code(export_code)
 
     with st.expander("➕ Add New Card", expanded=True):
         card_type = st.selectbox("Card Type", ["Standard", "Fill in Blank", "Multiple Choice"], key="add_card_type")
         
         question_placeholder = "Type your question here..."
         if card_type == "Fill in Blank":
-            question_placeholder = "Example: The capital of {1:France} is {2:Paris}"
+            question_placeholder = "Example: The capital of France is Paris."
         
         new_question = st.text_area("Question / Prompt", placeholder=question_placeholder, key="add_question_input")
         uploaded_image = st.file_uploader("Attach Image (Optional)", type=["png", "jpg", "jpeg"], key="add_image_input")
@@ -574,31 +709,41 @@ def render_editor():
 
         elif card_type == "Fill in Blank":
             st.divider()
-            st.subheader("🖱️ Interactive Builder")
+            st.subheader("🖱️ Interactive Blank Creator")
+            st.caption("Highlight text in the box below and click 'Turn Highlighted Text into Blank'.")
             
-            blank_col1, blank_col2, blank_col3 = st.columns([2, 1, 1])
-            with blank_col1:
-                blank_answer = st.text_input("Answer for blank", placeholder="e.g., Paris", key="blank_answer_for_add")
-            with blank_col3:
-                if st.button("Add Blank", use_container_width=True, key="add_blank_btn", help="➕ Add blank"):
-                    if blank_answer.strip() and new_question.strip():
-                        st.session_state.blank_builder_question += f" {{{st.session_state.blank_builder_count}:{blank_answer.strip()}}}"
-                        st.session_state.blank_builder_count += 1
-                        st.rerun()
-            
-            if st.session_state.blank_builder_question:
-                st.markdown("**Preview:**")
-                preview_text = st.session_state.blank_builder_question
-                blanks = re.findall(r"\{(\d+):([^\}]+)\}", preview_text)
-                
-                if blanks:
-                    for num, ans in blanks:
-                        preview_text = preview_text.replace(f"{{{num}:{ans}}}", f"<span class='highlighted-answer'>{ans}</span>")
-                    st.markdown(preview_text, unsafe_allow_html=True)
-                    st.success(f"✓ {len(blanks)} blank(s) created")
+            components.html("""
+            <div style="font-family: sans-serif; color: white;">
+                <textarea id="blankTextarea" style="width: 100%; height: 90px; border-radius: 6px; padding: 8px; background: #1E293B; color: #FFF; border: 1px solid #475569;" placeholder="Paste text here, select word(s), and click below..."></textarea>
+                <div style="margin-top: 6px; display: flex; gap: 8px;">
+                    <button onclick="makeBlank()" style="background: #2563EB; color: white; border: none; padding: 8px 12px; border-radius: 6px; font-weight: bold; cursor: pointer;">✨ Turn Highlighted Text into Blank</button>
+                    <button onclick="copyToClipboard()" style="background: #059669; color: white; border: none; padding: 8px 12px; border-radius: 6px; font-weight: bold; cursor: pointer;">📋 Copy Result</button>
+                </div>
+            </div>
+            <script>
+                let blankCounter = 1;
+                function makeBlank() {
+                    let textarea = document.getElementById("blankTextarea");
+                    let start = textarea.selectionStart;
+                    let end = textarea.selectionEnd;
+                    let selected = textarea.value.substring(start, end);
+                    if (selected.trim().length > 0) {
+                        let replacement = "{" + blankCounter + ":" + selected + "}";
+                        blankCounter++;
+                        textarea.value = textarea.value.substring(0, start) + replacement + textarea.value.substring(end);
+                    }
+                }
+                function copyToClipboard() {
+                    let textarea = document.getElementById("blankTextarea");
+                    textarea.select();
+                    document.execCommand("copy");
+                    alert("Copied to clipboard!");
+                }
+            </script>
+            """, height=160)
 
         if st.button("💾 Add Card to Deck", type="primary", use_container_width=True, key="submit_add_card_btn"):
-            if new_question.strip() or (card_type == "Fill in Blank" and st.session_state.blank_builder_question.strip()):
+            if new_question.strip():
                 if card_type == "Multiple Choice":
                     if not new_options:
                         st.error("Please add options for the multiple choice question!")
@@ -616,7 +761,7 @@ def render_editor():
 
                 card_data = {
                     "type": card_type,
-                    "question": st.session_state.blank_builder_question if card_type == "Fill in Blank" else new_question.strip(),
+                    "question": new_question.strip(),
                     "image": image_path,
                     "interval": 1,
                     "ease_factor": 2.5,
@@ -632,8 +777,6 @@ def render_editor():
 
                 cards.append(card_data)
                 save_data(st.session_state.data)
-                st.session_state.blank_builder_question = ""
-                st.session_state.blank_builder_count = 1
                 st.success("Card added!")
                 st.rerun()
             else:
@@ -822,7 +965,6 @@ def render_review():
         elif card["type"] == "Multiple Choice":
             st.markdown(f"### {card['question']}")
             
-            # Persist option order so reshuffling doesn't break input state
             opt_key = f"mc_opts_{idx}_{st.session_state.active_deck}"
             if opt_key not in st.session_state:
                 opts = card.get("options", []).copy()
