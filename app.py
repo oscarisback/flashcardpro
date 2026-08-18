@@ -90,6 +90,12 @@ if "show_srs" not in st.session_state:
     st.session_state.show_srs = False
 if "reveal_blanks" not in st.session_state:
     st.session_state.reveal_blanks = False
+if "blank_builder_question" not in st.session_state:
+    st.session_state.blank_builder_question = ""
+if "blank_builder_count" not in st.session_state:
+    st.session_state.blank_builder_count = 1
+if "review_mode" not in st.session_state:
+    st.session_state.review_mode = "study"
 
 # Helper Functions
 def get_folder_dict(path):
@@ -188,6 +194,29 @@ def rename_folder(old_name, new_name, parent_path):
         curr_dict[new_name.strip()] = curr_dict.pop(old_name)
         save_data(st.session_state.data)
 
+def move_folder(folder_name, source_path, target_path_str):
+    # Get the folder to move
+    source_dict = get_folder_dict(source_path) if source_path else st.session_state.data["files"]
+    if folder_name not in source_dict:
+        return
+    
+    folder_data = source_dict.pop(folder_name)
+    
+    # Add to target
+    if target_path_str == "Root (Unsorted)":
+        # Can't move to unsorted, it's not a real folder
+        source_dict[folder_name] = folder_data
+        return
+    else:
+        target_path = target_path_str.split(" / ")
+        target_dict = get_folder_dict(target_path[:-1]) if len(target_path) > 1 else st.session_state.data["files"]
+        if target_path[-1] in target_dict:
+            if "folders" not in target_dict[target_path[-1]]:
+                target_dict[target_path[-1]]["folders"] = {}
+            target_dict[target_path[-1]]["folders"][folder_name] = folder_data
+    
+    save_data(st.session_state.data)
+
 def export_deck_code(deck_name, cards):
     payload = {"name": deck_name, "cards": cards}
     raw_json = json.dumps(payload, ensure_ascii=False)
@@ -236,12 +265,13 @@ def render_home():
         
         # Create new folder
         with st.expander("➕ Create New Folder"):
-            new_folder_name = st.text_input("Folder Name")
+            new_folder_name = st.text_input("Folder Name", key="create_folder_input")
             parent_folder_display = st.selectbox(
                 "Parent Folder",
-                ["Root"] + [p.replace("Root (Unsorted)", "Root") for p in list_all_folder_paths()[1:]]
+                ["Root"] + [p.replace("Root (Unsorted)", "Root") for p in list_all_folder_paths()[1:]],
+                key="parent_folder_select"
             )
-            if st.button("Create Folder", key="create_folder_btn"):
+            if st.button("Create Folder", key="create_folder_btn", use_container_width=True):
                 if new_folder_name.strip():
                     if parent_folder_display == "Root":
                         st.session_state.data["files"][new_folder_name.strip()] = {"folders": {}}
@@ -257,18 +287,22 @@ def render_home():
 
         # Browse folders and decks
         def render_sidebar_tree(folder_dict, path):
-            for name, info in folder_dict.items():
+            for name, info in list(folder_dict.items()):
                 with st.expander(f"📂 {name}", expanded=False):
                     current_path = path + [name]
                     
                     # Folder actions
-                    col1, col2 = st.columns(2)
+                    col1, col2, col3 = st.columns(3)
                     with col1:
-                        if st.button("✏️ Rename", key=f"rename_folder_{name}", use_container_width=True):
+                        if st.button("Rename", key=f"rename_folder_{name}_{id(current_path)}", use_container_width=True, help="✏️ Rename"):
                             st.session_state[f"editing_rename_folder_{name}"] = not st.session_state.get(f"editing_rename_folder_{name}", False)
                             st.rerun()
                     with col2:
-                        if st.button("🗑️ Delete", key=f"delete_folder_{name}", use_container_width=True):
+                        if st.button("Move", key=f"move_folder_{name}_{id(current_path)}", use_container_width=True, help="📤 Move"):
+                            st.session_state[f"moving_folder_{name}_{id(current_path)}"] = not st.session_state.get(f"moving_folder_{name}_{id(current_path)}", False)
+                            st.rerun()
+                    with col3:
+                        if st.button("Delete", key=f"delete_folder_{name}_{id(current_path)}", use_container_width=True, help="🗑️ Delete"):
                             if st.session_state.get(f"confirm_delete_folder_{name}"):
                                 delete_folder(name, path)
                                 st.session_state[f"confirm_delete_folder_{name}"] = False
@@ -287,42 +321,80 @@ def render_home():
                                     rename_folder(name, new_name, path)
                                 st.session_state[f"editing_rename_folder_{name}"] = False
                                 st.rerun()
+                    
+                    if st.session_state.get(f"moving_folder_{name}_{id(current_path)}"):
+                        target_folder = st.selectbox("Move to:", [p for p in list_all_folder_paths() if p != "Root (Unsorted)" and p != " / ".join(path + [name])], key=f"move_target_folder_{name}_{id(current_path)}")
+                        move_col1, move_col2 = st.columns([1, 1])
+                        with move_col1:
+                            if st.button("✓ Move", key=f"confirm_move_folder_{name}_{id(current_path)}", use_container_width=True):
+                                move_folder(name, path, target_folder)
+                                st.session_state[f"moving_folder_{name}_{id(current_path)}"] = False
+                                st.rerun()
+                        with move_col2:
+                            if st.button("✕ Cancel", key=f"cancel_move_folder_{name}_{id(current_path)}", use_container_width=True):
+                                st.session_state[f"moving_folder_{name}_{id(current_path)}"] = False
+                                st.rerun()
 
                     # Decks in this folder
                     decks = info.get("decks", {})
                     for deck_name in list(decks.keys()):
-                        deck_col1, deck_col2, deck_col3, deck_col4 = st.columns([3, 1, 1, 1])
+                        deck_col1, deck_col2, deck_col3, deck_col4, deck_col5, deck_col6 = st.columns([2, 1, 1, 1, 1, 1])
                         with deck_col1:
-                            if st.button(f"🎴 {deck_name}", key=f"open_deck_{deck_name}_{path}", use_container_width=True):
+                            if st.button(f"{deck_name}", key=f"open_deck_{deck_name}_{id(current_path)}", use_container_width=True):
                                 navigate_to("editor", deck_name, current_path)
                         with deck_col2:
-                            if st.button("📖", key=f"review_{deck_name}_{path}", help="Review this deck", use_container_width=True):
+                            if st.button("📖", key=f"review_{deck_name}_{id(current_path)}", help="Review (Due)", use_container_width=True):
                                 st.session_state.review_cards = [c for c in decks[deck_name] if c.get("next_review", 0) <= time.time()]
                                 st.session_state.review_idx = 0
+                                st.session_state.review_mode = "study"
                                 navigate_to("review", deck_name, current_path)
                         with deck_col3:
-                            if st.button("✏️", key=f"rename_deck_{deck_name}_{path}", help="Rename", use_container_width=True):
-                                st.session_state[f"editing_rename_deck_{deck_name}_{path}"] = not st.session_state.get(f"editing_rename_deck_{deck_name}_{path}", False)
-                                st.rerun()
+                            if st.button("🎯", key=f"practice_{deck_name}_{id(current_path)}", help="Practice", use_container_width=True):
+                                st.session_state.review_cards = decks[deck_name].copy()
+                                random.shuffle(st.session_state.review_cards)
+                                st.session_state.review_idx = 0
+                                st.session_state.review_mode = "practice"
+                                navigate_to("review", deck_name, current_path)
                         with deck_col4:
-                            if st.button("🗑️", key=f"delete_deck_{deck_name}_{path}", help="Delete", use_container_width=True):
-                                if st.session_state.get(f"confirm_delete_deck_{deck_name}_{path}"):
+                            if st.button("✏️ ", key=f"rename_deck_{deck_name}_{id(current_path)}", help="Rename", use_container_width=True):
+                                st.session_state[f"editing_rename_deck_{deck_name}_{id(current_path)}"] = not st.session_state.get(f"editing_rename_deck_{deck_name}_{id(current_path)}", False)
+                                st.rerun()
+                        with deck_col5:
+                            if st.button("📤 ", key=f"move_deck_{deck_name}_{id(current_path)}", help="Move", use_container_width=True):
+                                st.session_state[f"moving_deck_{deck_name}_{id(current_path)}"] = not st.session_state.get(f"moving_deck_{deck_name}_{id(current_path)}", False)
+                                st.rerun()
+                        with deck_col6:
+                            if st.button("🗑️ ", key=f"delete_deck_{deck_name}_{id(current_path)}", help="Delete", use_container_width=True):
+                                if st.session_state.get(f"confirm_delete_deck_{deck_name}_{id(current_path)}"):
                                     delete_deck(deck_name, current_path)
-                                    st.session_state[f"confirm_delete_deck_{deck_name}_{path}"] = False
+                                    st.session_state[f"confirm_delete_deck_{deck_name}_{id(current_path)}"] = False
                                     st.rerun()
                                 else:
-                                    st.session_state[f"confirm_delete_deck_{deck_name}_{path}"] = True
+                                    st.session_state[f"confirm_delete_deck_{deck_name}_{id(current_path)}"] = True
                                     st.rerun()
                         
-                        if st.session_state.get(f"editing_rename_deck_{deck_name}_{path}"):
+                        if st.session_state.get(f"editing_rename_deck_{deck_name}_{id(current_path)}"):
                             ren_col1, ren_col2 = st.columns([2, 1])
                             with ren_col1:
-                                new_deck_name = st.text_input("New name", value=deck_name, key=f"rename_input_deck_{deck_name}_{path}", label_visibility="collapsed")
+                                new_deck_name = st.text_input("New name", value=deck_name, key=f"rename_input_deck_{deck_name}_{id(current_path)}", label_visibility="collapsed")
                             with ren_col2:
-                                if st.button("✓ Save", key=f"save_rename_deck_{deck_name}_{path}", use_container_width=True):
+                                if st.button("✓ Save", key=f"save_rename_deck_{deck_name}_{id(current_path)}", use_container_width=True):
                                     if new_deck_name.strip() and new_deck_name != deck_name:
                                         rename_deck(deck_name, new_deck_name, current_path)
-                                    st.session_state[f"editing_rename_deck_{deck_name}_{path}"] = False
+                                    st.session_state[f"editing_rename_deck_{deck_name}_{id(current_path)}"] = False
+                                    st.rerun()
+                        
+                        if st.session_state.get(f"moving_deck_{deck_name}_{id(current_path)}"):
+                            target_folder = st.selectbox("Move to:", list_all_folder_paths(), key=f"move_target_{deck_name}_{id(current_path)}")
+                            move_col1, move_col2 = st.columns([1, 1])
+                            with move_col1:
+                                if st.button("✓ Move", key=f"confirm_move_{deck_name}_{id(current_path)}", use_container_width=True):
+                                    move_deck(deck_name, current_path, target_folder)
+                                    st.session_state[f"moving_deck_{deck_name}_{id(current_path)}"] = False
+                                    st.rerun()
+                            with move_col2:
+                                if st.button("✕ Cancel", key=f"cancel_move_{deck_name}_{id(current_path)}", use_container_width=True):
+                                    st.session_state[f"moving_deck_{deck_name}_{id(current_path)}"] = False
                                     st.rerun()
 
                     # Nested folders
@@ -336,48 +408,72 @@ def render_home():
         st.divider()
         st.subheader("Unsorted Decks")
         for deck_name in list(st.session_state.data["unsorted_decks"].keys()):
-            with st.container(border=False):
-                deck_col1, deck_col2, deck_col3, deck_col4 = st.columns([3, 1, 1, 1])
-                with deck_col1:
-                    if st.button(f"🎴 {deck_name}", key=f"open_unsorted_{deck_name}", use_container_width=True):
-                        navigate_to("editor", deck_name, "unsorted")
-                with deck_col2:
-                    if st.button("📖", key=f"review_unsorted_{deck_name}", help="Review", use_container_width=True):
-                        st.session_state.review_cards = [c for c in st.session_state.data["unsorted_decks"][deck_name] if c.get("next_review", 0) <= time.time()]
-                        st.session_state.review_idx = 0
-                        navigate_to("review", deck_name, "unsorted")
-                with deck_col3:
-                    if st.button("✏️", key=f"rename_unsorted_{deck_name}", help="Rename", use_container_width=True):
-                        st.session_state[f"editing_rename_unsorted_{deck_name}"] = not st.session_state.get(f"editing_rename_unsorted_{deck_name}", False)
+            deck_col1, deck_col2, deck_col3, deck_col4, deck_col5, deck_col6 = st.columns([2, 1, 1, 1, 1, 1])
+            with deck_col1:
+                if st.button(f"{deck_name}", key=f"open_unsorted_{deck_name}", use_container_width=True):
+                    navigate_to("editor", deck_name, "unsorted")
+            with deck_col2:
+                if st.button("📖", key=f"review_unsorted_{deck_name}", help="Review (Due)", use_container_width=True):
+                    st.session_state.review_cards = [c for c in st.session_state.data["unsorted_decks"][deck_name] if c.get("next_review", 0) <= time.time()]
+                    st.session_state.review_idx = 0
+                    st.session_state.review_mode = "study"
+                    navigate_to("review", deck_name, "unsorted")
+            with deck_col3:
+                if st.button("🎯", key=f"practice_unsorted_{deck_name}", help="Practice", use_container_width=True):
+                    st.session_state.review_cards = st.session_state.data["unsorted_decks"][deck_name].copy()
+                    random.shuffle(st.session_state.review_cards)
+                    st.session_state.review_idx = 0
+                    st.session_state.review_mode = "practice"
+                    navigate_to("review", deck_name, "unsorted")
+            with deck_col4:
+                if st.button("✏️ ", key=f"rename_unsorted_{deck_name}", help="Rename", use_container_width=True):
+                    st.session_state[f"editing_rename_unsorted_{deck_name}"] = not st.session_state.get(f"editing_rename_unsorted_{deck_name}", False)
+                    st.rerun()
+            with deck_col5:
+                if st.button("📤 ", key=f"move_unsorted_{deck_name}", help="Move", use_container_width=True):
+                    st.session_state[f"moving_unsorted_{deck_name}"] = not st.session_state.get(f"moving_unsorted_{deck_name}", False)
+                    st.rerun()
+            with deck_col6:
+                if st.button("🗑️ ", key=f"delete_unsorted_{deck_name}", help="Delete", use_container_width=True):
+                    if st.session_state.get(f"confirm_delete_unsorted_{deck_name}"):
+                        delete_deck(deck_name, "unsorted")
+                        st.session_state[f"confirm_delete_unsorted_{deck_name}"] = False
                         st.rerun()
-                with deck_col4:
-                    if st.button("🗑️", key=f"delete_unsorted_{deck_name}", help="Delete", use_container_width=True):
-                        if st.session_state.get(f"confirm_delete_unsorted_{deck_name}"):
-                            delete_deck(deck_name, "unsorted")
-                            st.session_state[f"confirm_delete_unsorted_{deck_name}"] = False
-                            st.rerun()
-                        else:
-                            st.session_state[f"confirm_delete_unsorted_{deck_name}"] = True
-                            st.rerun()
-                
-                if st.session_state.get(f"editing_rename_unsorted_{deck_name}"):
-                    ren_col1, ren_col2 = st.columns([2, 1])
-                    with ren_col1:
-                        new_deck_name = st.text_input("New name", value=deck_name, key=f"rename_input_unsorted_{deck_name}", label_visibility="collapsed")
-                    with ren_col2:
-                        if st.button("✓ Save", key=f"save_rename_unsorted_{deck_name}", use_container_width=True):
-                            if new_deck_name.strip() and new_deck_name != deck_name:
-                                rename_deck(deck_name, new_deck_name, "unsorted")
-                            st.session_state[f"editing_rename_unsorted_{deck_name}"] = False
-                            st.rerun()
+                    else:
+                        st.session_state[f"confirm_delete_unsorted_{deck_name}"] = True
+                        st.rerun()
+            
+            if st.session_state.get(f"editing_rename_unsorted_{deck_name}"):
+                ren_col1, ren_col2 = st.columns([2, 1])
+                with ren_col1:
+                    new_deck_name = st.text_input("New name", value=deck_name, key=f"rename_input_unsorted_{deck_name}", label_visibility="collapsed")
+                with ren_col2:
+                    if st.button("✓ Save", key=f"save_rename_unsorted_{deck_name}", use_container_width=True):
+                        if new_deck_name.strip() and new_deck_name != deck_name:
+                            rename_deck(deck_name, new_deck_name, "unsorted")
+                        st.session_state[f"editing_rename_unsorted_{deck_name}"] = False
+                        st.rerun()
+            
+            if st.session_state.get(f"moving_unsorted_{deck_name}"):
+                target_folder = st.selectbox("Move to:", list_all_folder_paths(), key=f"move_target_unsorted_{deck_name}")
+                move_col1, move_col2 = st.columns([1, 1])
+                with move_col1:
+                    if st.button("✓ Move", key=f"confirm_move_unsorted_{deck_name}", use_container_width=True):
+                        move_deck(deck_name, "unsorted", target_folder)
+                        st.session_state[f"moving_unsorted_{deck_name}"] = False
+                        st.rerun()
+                with move_col2:
+                    if st.button("✕ Cancel", key=f"cancel_move_unsorted_{deck_name}", use_container_width=True):
+                        st.session_state[f"moving_unsorted_{deck_name}"] = False
+                        st.rerun()
 
     # Main Content
     col1, col2 = st.columns(2)
     with col1:
         with st.expander("➕ Create New Deck", expanded=False):
-            new_deck_name = st.text_input("Deck Name")
-            target_folder = st.selectbox("Target Folder", list_all_folder_paths())
-            if st.button("Create Deck"):
+            new_deck_name = st.text_input("Deck Name", key="new_deck_name_input")
+            target_folder = st.selectbox("Target Folder", list_all_folder_paths(), key="target_folder_select")
+            if st.button("Create Deck", use_container_width=True):
                 if new_deck_name.strip():
                     if target_folder == "Root (Unsorted)":
                         st.session_state.data["unsorted_decks"][new_deck_name.strip()] = []
@@ -393,9 +489,9 @@ def render_home():
 
     with col2:
         with st.expander("📥 Import Deck from Code", expanded=False):
-            import_code = st.text_area("Paste your deck code here")
+            import_code = st.text_area("Paste your deck code here", key="import_code_input")
             target_import = st.selectbox("Import to", list_all_folder_paths(), key="import_target")
-            if st.button("Import Deck"):
+            if st.button("Import Deck", use_container_width=True):
                 if import_code.strip():
                     target_path = "unsorted" if target_import == "Root (Unsorted)" else target_import.split(" / ")
                     success, message = import_deck_code(import_code, target_path)
@@ -430,145 +526,104 @@ def render_editor():
 
     # Add new card
     with st.expander("➕ Add New Card", expanded=True):
-        with st.form("card_form", clear_on_submit=True):
-            card_type = st.selectbox("Card Type", ["Standard", "Fill in Blank", "Multiple Choice"])
+        card_type = st.selectbox("Card Type", ["Standard", "Fill in Blank", "Multiple Choice"], key="add_card_type")
+        
+        # Common field for all card types
+        question_placeholder = "Type your question here..."
+        if card_type == "Fill in Blank":
+            question_placeholder = "Example: The capital of {1:France} is {2:Paris}"
+        
+        new_question = st.text_area("Question / Prompt", placeholder=question_placeholder, key="add_question_input")
+        uploaded_image = st.file_uploader("Attach Image (Optional)", type=["png", "jpg", "jpeg"], key="add_image_input")
+        
+        new_answer = ""
+        new_options = []
+        new_explanation = ""
+
+        # Conditional fields based on card type
+        if card_type == "Standard":
+            st.divider()
+            new_answer = st.text_area("Answer", key="add_answer_input")
+
+        elif card_type == "Multiple Choice":
+            st.divider()
+            options_raw = st.text_area("Options (One per line)", placeholder="Option 1\nOption 2\nOption 3", key="add_options_input")
+            new_answer = st.text_input("✅ Correct Answer (Exact text match)", key="add_mc_answer_input")
+            new_explanation = st.text_area("💡 Explanation (Optional)", key="add_explanation_input")
+            new_options = [o.strip() for o in options_raw.splitlines() if o.strip()]
+
+        elif card_type == "Fill in Blank":
+            st.divider()
+            # Interactive blank builder
+            st.subheader("🖱️ Interactive Builder")
             
-            # Common field for all card types
-            question_help = "For Fill-in-Blank, format as: {1:answer}" if card_type == "Fill in Blank" else ""
-            question = st.text_area("Question / Prompt", help=question_help)
-            uploaded_image = st.file_uploader("Attach Image (Optional)", type=["png", "jpg", "jpeg"])
-            
-            answer = ""
-            options_raw = ""
-            explanation = ""
-
-            # Conditional fields based on card type
-            if card_type == "Standard":
-                st.divider()
-                answer = st.text_area("Answer")
-
-            elif card_type == "Multiple Choice":
-                st.divider()
-                options_raw = st.text_area("Options (One per line)", placeholder="Option 1\nOption 2\nOption 3")
-                answer = st.text_input("✅ Correct Answer (Exact text match)")
-                explanation = st.text_area("💡 Explanation (Optional)")
-
-            elif card_type == "Fill in Blank":
-                st.divider()
-                
-                # Two tabs: Manual and Interactive
-                tab1, tab2 = st.tabs(["📝 Manual Format", "🖱️ Interactive Builder"])
-                
-                with tab1:
-                    st.info("💡 Format your question with {1:answer1} and {2:answer2} for each blank\nExample: The capital of France is {1:Paris}")
-                    question = st.text_area("Question (With blanks)", key="manual_question", placeholder="{1:answer} goes here")
-                
-                with tab2:
-                    st.subheader("Build Your Question Interactively")
-                    
-                    # Initialize session state for blanks
-                    if "blank_builder_question" not in st.session_state:
-                        st.session_state.blank_builder_question = ""
-                    if "blank_builder_count" not in st.session_state:
-                        st.session_state.blank_builder_count = 1
-                    
-                    # Display question being built
-                    st.text_input("Question text (type your question, then add blanks)", 
-                                 value=st.session_state.blank_builder_question,
-                                 key="blank_text_input",
-                                 on_change=lambda: st.session_state.update({"blank_builder_question": st.session_state.blank_text_input}))
-                    
-                    # Add blanks
-                    blank_col1, blank_col2, blank_col3 = st.columns([2, 1, 1])
-                    with blank_col1:
-                        blank_answer = st.text_input("Answer for blank", placeholder="e.g., Paris", key="blank_answer_input")
-                    with blank_col2:
-                        st.write("")  # Spacer
-                        st.write("")  # Spacer
-                    with blank_col3:
-                        if st.button("➕ Add Blank", use_container_width=True):
-                            if blank_answer.strip() and st.session_state.blank_builder_question.strip():
-                                # Find insertion point or append
-                                current_text = st.session_state.blank_builder_question
-                                cursor_placeholder = "[BLANK]"
-                                if cursor_placeholder in current_text:
-                                    current_text = current_text.replace(cursor_placeholder, f"{{{st.session_state.blank_builder_count}:{blank_answer.strip()}}}", 1)
-                                else:
-                                    current_text += f" {{{st.session_state.blank_builder_count}:{blank_answer.strip()}}}"
-                                
-                                st.session_state.blank_builder_question = current_text
-                                st.session_state.blank_builder_count += 1
-                                st.rerun()
-                    
-                    st.divider()
-                    
-                    # Preview
-                    if st.session_state.blank_builder_question:
-                        st.markdown("**Preview:**")
-                        preview_text = st.session_state.blank_builder_question
-                        blanks = re.findall(r"\{(\d+):([^\}]+)\}", preview_text)
-                        
-                        if blanks:
-                            for num, ans in blanks:
-                                preview_text = preview_text.replace(f"{{{num}:{ans}}}", f"<span class='highlighted-answer'>{ans}</span>")
-                            st.markdown(preview_text, unsafe_allow_html=True)
-                            st.success(f"✓ {len(blanks)} blank(s) created")
-                        else:
-                            st.warning("No blanks detected yet")
-                    
-                    # Clear button
-                    if st.button("🗑️ Clear All", use_container_width=True):
-                        st.session_state.blank_builder_question = ""
-                        st.session_state.blank_builder_count = 1
+            blank_col1, blank_col2, blank_col3 = st.columns([2, 1, 1])
+            with blank_col1:
+                blank_answer = st.text_input("Answer for blank", placeholder="e.g., Paris", key="blank_answer_for_add")
+            with blank_col3:
+                if st.button("Add Blank", use_container_width=True, key="add_blank_btn", help="➕ Add blank"):
+                    if blank_answer.strip() and new_question.strip():
+                        st.session_state.blank_builder_question += f" {{{st.session_state.blank_builder_count}:{blank_answer.strip()}}}"
+                        st.session_state.blank_builder_count += 1
                         st.rerun()
-                    
-                    # Use the built question
-                    question = st.session_state.blank_builder_question
+            
+            if st.session_state.blank_builder_question:
+                st.markdown("**Preview:**")
+                preview_text = st.session_state.blank_builder_question
+                blanks = re.findall(r"\{(\d+):([^\}]+)\}", preview_text)
+                
+                if blanks:
+                    for num, ans in blanks:
+                        preview_text = preview_text.replace(f"{{{num}:{ans}}}", f"<span class='highlighted-answer'>{ans}</span>")
+                    st.markdown(preview_text, unsafe_allow_html=True)
+                    st.success(f"✓ {len(blanks)} blank(s) created")
 
-            if st.form_submit_button("💾 Add Card to Deck", type="primary", use_container_width=True):
-                if question.strip():
-                    image_path = None
-                    if uploaded_image is not None:
-                        os.makedirs(UPLOADS_DIR, exist_ok=True)
-                        image_path = os.path.join(UPLOADS_DIR, uploaded_image.name)
-                        with open(image_path, "wb") as f:
-                            f.write(uploaded_image.getbuffer())
+        if st.button("💾 Add Card to Deck", type="primary", use_container_width=True, key="submit_add_card_btn"):
+            if new_question.strip() or (card_type == "Fill in Blank" and st.session_state.blank_builder_question.strip()):
+                image_path = None
+                if uploaded_image is not None:
+                    os.makedirs(UPLOADS_DIR, exist_ok=True)
+                    image_path = os.path.join(UPLOADS_DIR, uploaded_image.name)
+                    with open(image_path, "wb") as f:
+                        f.write(uploaded_image.getbuffer())
 
-                    card_data = {
-                        "type": card_type,
-                        "question": question.strip(),
-                        "image": image_path,
-                        "interval": 1,
-                        "ease_factor": 2.5,
-                        "next_review": time.time()
-                    }
+                card_data = {
+                    "type": card_type,
+                    "question": st.session_state.blank_builder_question if card_type == "Fill in Blank" else new_question.strip(),
+                    "image": image_path,
+                    "interval": 1,
+                    "ease_factor": 2.5,
+                    "next_review": time.time()
+                }
 
-                    if card_type == "Standard":
-                        card_data["answer"] = answer.strip()
-                    elif card_type == "Multiple Choice":
-                        opts = [o.strip() for o in options_raw.splitlines() if o.strip()]
-                        card_data["options"] = opts
-                        card_data["answer"] = answer.strip()
-                        card_data["explanation"] = explanation.strip()
+                if card_type == "Standard":
+                    card_data["answer"] = new_answer.strip()
+                elif card_type == "Multiple Choice":
+                    card_data["options"] = new_options
+                    card_data["answer"] = new_answer.strip()
+                    card_data["explanation"] = new_explanation.strip()
 
-                    cards.append(card_data)
-                    save_data(st.session_state.data)
-                    st.success("Card added!")
-                    st.rerun()
-                else:
-                    st.error("Please enter a question!")
+                cards.append(card_data)
+                save_data(st.session_state.data)
+                st.session_state.blank_builder_question = ""
+                st.session_state.blank_builder_count = 1
+                st.success("Card added!")
+                st.rerun()
+            else:
+                st.error("Please enter a question!")
 
     st.subheader(f"Existing Cards ({len(cards)})")
     for idx, c in enumerate(cards):
         with st.container(border=True):
-            col_txt, col_edit, col_del = st.columns([4, 1, 1])
+            col_txt, col_edit, col_del = st.columns([4.5, 0.75, 0.75])
             with col_txt:
                 st.markdown(f"**#{idx+1} [{c['type']}] {c['question'][:80]}")
             with col_edit:
-                if st.button("✏️", key=f"edit_{idx}", use_container_width=True, help="Edit this card"):
+                if st.button("Edit", key=f"edit_btn_{idx}", use_container_width=True, help="✏️ Edit this card"):
                     st.session_state[f"editing_{idx}"] = not st.session_state.get(f"editing_{idx}", False)
+                    st.rerun()
             with col_del:
-                if st.button("🗑️", key=f"del_{idx}", use_container_width=True, help="Delete this card"):
+                if st.button("Delete", key=f"del_btn_{idx}", use_container_width=True, help="🗑️ Delete this card"):
                     if st.session_state.get(f"confirm_delete_card_{idx}"):
                         cards.pop(idx)
                         save_data(st.session_state.data)
@@ -576,92 +631,84 @@ def render_editor():
                         st.rerun()
                     else:
                         st.session_state[f"confirm_delete_card_{idx}"] = True
-                        st.warning("Click again to confirm")
+                        st.rerun()
 
-            # Edit card
+            # Edit card section
             if st.session_state.get(f"editing_{idx}"):
                 st.divider()
                 st.write("**✏️ Edit Card**")
                 
                 if c["type"] == "Standard":
-                    # STANDARD CARD EDITING
-                    with st.form(f"edit_form_{idx}", clear_on_submit=True):
-                        new_question = st.text_area("Question", value=c.get("question", ""), key=f"q_{idx}")
-                        new_answer = st.text_area("Answer", value=c.get("answer", ""), key=f"a_{idx}")
-                        if st.form_submit_button("💾 Save Changes", use_container_width=True):
-                            c["question"] = new_question.strip()
-                            c["answer"] = new_answer.strip()
-                            save_data(st.session_state.data)
-                            st.session_state[f"editing_{idx}"] = False
-                            st.rerun()
+                    new_question_edit = st.text_area("Question", value=c.get("question", ""), key=f"edit_q_{idx}")
+                    new_answer_edit = st.text_area("Answer", value=c.get("answer", ""), key=f"edit_a_{idx}")
+                    if st.button("💾 Save Changes", type="primary", use_container_width=True, key=f"save_edit_{idx}"):
+                        c["question"] = new_question_edit.strip()
+                        c["answer"] = new_answer_edit.strip()
+                        save_data(st.session_state.data)
+                        st.session_state[f"editing_{idx}"] = False
+                        st.rerun()
 
                 elif c["type"] == "Multiple Choice":
-                    # MULTIPLE CHOICE EDITING
                     col1, col2 = st.columns([1, 1])
                     with col1:
-                        new_question = st.text_area("Question", value=c.get("question", ""), key=f"q_{idx}", height=100)
+                        new_question_edit = st.text_area("Question", value=c.get("question", ""), key=f"edit_q_{idx}", height=100)
                     with col2:
-                        new_answer = st.selectbox("✅ Correct Answer", c.get("options", []), key=f"a_{idx}")
+                        new_answer_edit = st.selectbox("✅ Correct Answer", c.get("options", []), key=f"edit_a_{idx}")
                     
-                    new_explanation = st.text_area("💡 Explanation", value=c.get("explanation", ""), key=f"exp_{idx}", height=80)
+                    new_explanation_edit = st.text_area("💡 Explanation", value=c.get("explanation", ""), key=f"edit_exp_{idx}", height=80)
                     
                     st.subheader("📋 Manage Options")
                     current_options = c.get("options", [])
                     
-                    # Display current options
                     for opt_idx, opt in enumerate(current_options):
                         opt_col1, opt_col2 = st.columns([4, 1])
                         with opt_col1:
                             st.text(f"{opt_idx + 1}. {opt}")
                         with opt_col2:
-                            if st.button("🗑️", key=f"del_opt_{idx}_{opt_idx}", use_container_width=True, help="Delete this option"):
+                            if st.button("Delete", key=f"del_opt_{idx}_{opt_idx}", use_container_width=True, help="🗑️ Delete option"):
                                 current_options.pop(opt_idx)
                                 save_data(st.session_state.data)
                                 st.rerun()
                     
-                    # Add new option (only for multiple choice)
                     st.write("**Add new option:**")
                     new_opt_col1, new_opt_col2 = st.columns([4, 1])
                     with new_opt_col1:
                         new_option = st.text_input("New option text", key=f"new_opt_{idx}")
                     with new_opt_col2:
-                        if st.button("➕ Add", key=f"add_opt_{idx}", use_container_width=True, help="Add a new option"):
+                        if st.button("Add", key=f"add_opt_{idx}", use_container_width=True, help="➕ Add option"):
                             if new_option.strip() and new_option.strip() not in current_options:
                                 current_options.append(new_option.strip())
                                 save_data(st.session_state.data)
                                 st.rerun()
                     
-                    # Save button
-                    if st.button("💾 Save All Changes", type="primary", use_container_width=True):
-                        c["question"] = new_question.strip()
-                        c["answer"] = new_answer
+                    if st.button("💾 Save All Changes", type="primary", use_container_width=True, key=f"save_mc_edit_{idx}"):
+                        c["question"] = new_question_edit.strip()
+                        c["answer"] = new_answer_edit
                         c["options"] = current_options
-                        c["explanation"] = new_explanation.strip()
+                        c["explanation"] = new_explanation_edit.strip()
                         save_data(st.session_state.data)
                         st.session_state[f"editing_{idx}"] = False
                         st.rerun()
 
                 else:  # Fill in Blank
-                    # FILL IN BLANK EDITING
-                    new_question = st.text_area(
+                    new_question_edit = st.text_area(
                         "Question (Format: {1:answer1} and {2:answer2})", 
                         value=c.get("question", ""), 
-                        key=f"q_{idx}",
+                        key=f"edit_q_{idx}",
                         height=120,
-                        help="Use {number:answer} for each blank. Example: The capital of France is {1:Paris} and it's in {2:Europe}"
+                        help="Use {number:answer} for each blank."
                     )
                     
-                    # Preview (only for fill in blank)
                     st.subheader("👁️ Live Preview")
-                    blanks = re.findall(r"\{(\d+):([^\}]+)\}", new_question)
+                    blanks = re.findall(r"\{(\d+):([^\}]+)\}", new_question_edit)
                     if blanks:
-                        preview_text = new_question
+                        preview_text = new_question_edit
                         for num, ans in blanks:
                             preview_text = preview_text.replace(f"{{{num}:{ans}}}", f"<span class='highlighted-answer'>{ans}</span>")
                         st.markdown("**With answers highlighted (study mode):**")
                         st.markdown(preview_text, unsafe_allow_html=True)
                         
-                        preview_blanks = new_question
+                        preview_blanks = new_question_edit
                         for num, ans in blanks:
                             preview_blanks = preview_blanks.replace(f"{{{num}:{ans}}}", " `[ ____ ]` ")
                         st.markdown("**During practice (blanks to fill):**")
@@ -671,8 +718,8 @@ def render_editor():
                     else:
                         st.warning("⚠️ No blanks detected. Use format {number:answer}")
                     
-                    if st.button("💾 Save Changes", type="primary", use_container_width=True):
-                        c["question"] = new_question.strip()
+                    if st.button("💾 Save Changes", type="primary", use_container_width=True, key=f"save_fib_edit_{idx}"):
+                        c["question"] = new_question_edit.strip()
                         save_data(st.session_state.data)
                         st.session_state[f"editing_{idx}"] = False
                         st.rerun()
@@ -691,7 +738,8 @@ def render_review():
 
     card = cards[idx]
     progress = (idx + 1) / len(cards)
-    st.progress(progress, text=f"Card {idx + 1} of {len(cards)} — Deck: {st.session_state.active_deck}")
+    mode_label = "📖 Study Mode (SRS)" if st.session_state.review_mode == "study" else "🎯 Practice Mode"
+    st.progress(progress, text=f"Card {idx + 1} of {len(cards)} — {mode_label} — Deck: {st.session_state.active_deck}")
 
     c_pad, c_exit = st.columns([3, 1])
     with c_pad:
@@ -760,7 +808,6 @@ def render_review():
             display_text = card["question"]
             
             if not st.session_state.reveal_blanks:
-                # Show highlighted answers
                 for num, ans in blanks:
                     display_text = display_text.replace(f"{{{num}:{ans}}}", f"<span class='highlighted-answer'>{ans}</span>")
                 st.markdown(f"### {display_text}", unsafe_allow_html=True)
@@ -769,7 +816,6 @@ def render_review():
                     st.session_state.reveal_blanks = True
                     st.rerun()
             else:
-                # Show blanks to fill in
                 for num, ans in blanks:
                     display_text = display_text.replace(f"{{{num}:{ans}}}", " `[ ____ ]` ")
                 st.markdown(f"### {display_text}")
@@ -794,10 +840,14 @@ def render_review():
 
 def render_srs_controls(card):
     st.divider()
-    st.write("**How easily did you recall this card?**")
+    if st.session_state.review_mode == "study":
+        st.write("**How easily did you recall this card?**")
+    else:
+        st.write("**Next card**")
+    
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        if st.button("❌ Missed", key="srs_1", use_container_width=True):
+        if st.button("❌ Missed" if st.session_state.review_mode == "study" else "❌ Again", key="srs_1", use_container_width=True):
             apply_srs(card, 1)
     with c2:
         if st.button("⚡ Hard", key="srs_3", use_container_width=True):
@@ -806,25 +856,28 @@ def render_srs_controls(card):
         if st.button("👍 Good", key="srs_4", use_container_width=True):
             apply_srs(card, 4)
     with c4:
-        if st.button("✅ Easy", key="srs_5", use_container_width=True):
+        if st.button("✅ Easy" if st.session_state.review_mode == "study" else "✅ Got it", key="srs_5", use_container_width=True):
             apply_srs(card, 5)
 
 def apply_srs(card, quality):
-    ease = card.get("ease_factor", 2.5)
-    interval = card.get("interval", 1)
+    # Only apply SRS in study mode
+    if st.session_state.review_mode == "study":
+        ease = card.get("ease_factor", 2.5)
+        interval = card.get("interval", 1)
 
-    if quality < 3:
-        interval = 1
-        st.session_state.review_cards.append(card)
-    else:
-        interval = max(1, int(interval * ease))
-        ease = max(1.3, ease + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02)))
+        if quality < 3:
+            interval = 1
+            st.session_state.review_cards.append(card)
+        else:
+            interval = max(1, int(interval * ease))
+            ease = max(1.3, ease + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02)))
 
-    card["ease_factor"] = ease
-    card["interval"] = interval
-    card["next_review"] = time.time() + (interval * 86400)
+        card["ease_factor"] = ease
+        card["interval"] = interval
+        card["next_review"] = time.time() + (interval * 86400)
 
-    save_data(st.session_state.data)
+        save_data(st.session_state.data)
+    
     st.session_state.show_ans = False
     st.session_state.show_srs = False
     st.session_state.reveal_blanks = False
