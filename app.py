@@ -173,28 +173,45 @@ def list_all_folder_paths(base_dict=None, current_prefix=None):
     return paths
 
 def move_deck(deck_name, source_path, target_path_str):
-    cards = []
-    if source_path == "unsorted":
-        if deck_name in st.session_state.data["unsorted_decks"]:
-            cards = st.session_state.data["unsorted_decks"].pop(deck_name)
-    else:
-        folder_dict = get_folder_dict(source_path[:-1]) if len(source_path) > 1 else st.session_state.data["files"]
-        if source_path and source_path[-1] in folder_dict:
-            decks = folder_dict[source_path[-1]].get("decks", {})
-            if deck_name in decks:
-                cards = decks.pop(deck_name)
-
-    if target_path_str == "Root (Unsorted)":
-        st.session_state.data["unsorted_decks"][deck_name] = cards
-    else:
-        target_path = target_path_str.split(" / ")
-        target_dict = get_folder_dict(target_path[:-1]) if len(target_path) > 1 else st.session_state.data["files"]
-        if target_path[-1] in target_dict:
-            if "decks" not in target_dict[target_path[-1]]:
-                target_dict[target_path[-1]]["decks"] = {}
-            target_dict[target_path[-1]]["decks"][deck_name] = cards
-
-    save_data(st.session_state.data)
+    """Move a deck from source to target location"""
+    try:
+        cards = []
+        
+        # Remove from source
+        if source_path == "unsorted":
+            if deck_name in st.session_state.data["unsorted_decks"]:
+                cards = st.session_state.data["unsorted_decks"].pop(deck_name)
+        else:
+            # source_path is a list like ["Folder1"] or ["Folder1", "Subfolder"]
+            folder_dict = get_folder_dict(source_path[:-1]) if len(source_path) > 1 else st.session_state.data["files"]
+            if folder_dict and source_path[-1] in folder_dict:
+                decks = folder_dict[source_path[-1]].get("decks", {})
+                if deck_name in decks:
+                    cards = decks.pop(deck_name)
+        
+        if not cards:
+            st.error(f"Could not find deck '{deck_name}' to move")
+            return
+        
+        # Add to target
+        if target_path_str == "Root (Unsorted)":
+            st.session_state.data["unsorted_decks"][deck_name] = cards
+        else:
+            target_path = target_path_str.split(" / ")
+            target_dict = get_folder_dict(target_path[:-1]) if len(target_path) > 1 else st.session_state.data["files"]
+            if target_dict and target_path[-1] in target_dict:
+                if "decks" not in target_dict[target_path[-1]]:
+                    target_dict[target_path[-1]]["decks"] = {}
+                target_dict[target_path[-1]]["decks"][deck_name] = cards
+            else:
+                st.error(f"Target folder '{target_path_str}' not found")
+                return
+        
+        save_data(st.session_state.data)
+        return True
+    except Exception as e:
+        st.error(f"Error moving deck: {str(e)}")
+        return False
 
 def delete_deck(deck_name, path):
     if path == "unsorted":
@@ -258,7 +275,19 @@ def move_folder(folder_name, source_path, target_path_str):
     
     save_data(st.session_state.data)
 
-# Export / Import & URL Link Generators
+# Compact Encoding Functions (for shorter export codes)
+def generate_short_export_code(data_dict):
+    """Generate a short, URL-safe export code"""
+    raw_json = json.dumps(data_dict, separators=(',', ':'), ensure_ascii=False).encode("utf-8")
+    compressed = zlib.compress(raw_json, level=9)
+    
+    # Use standard base64 but with URL-safe alphabet
+    encoded = base64.urlsafe_b64encode(compressed).decode("utf-8")
+    
+    # Take first 20 chars and make it readable (remove padding)
+    short_code = encoded.replace('_', '').replace('-', '')[:20]
+    return short_code
+
 def export_deck_code(deck_name, cards):
     minified_cards = []
     for c in cards:
@@ -283,6 +312,7 @@ def export_deck_code(deck_name, cards):
         "c": minified_cards
     }
     
+    # Return full encoded data, not short code
     raw_json = json.dumps(payload, separators=(',', ':'), ensure_ascii=False).encode("utf-8")
     compressed = zlib.compress(raw_json, level=9)
     return base64.urlsafe_b64encode(compressed).decode("utf-8")
@@ -301,19 +331,24 @@ def import_any_code(encoded_code, target_path):
     try:
         clean_code = encoded_code.strip().encode("utf-8")
         
+        # Try different decoding methods
+        decoded_bytes = None
         try:
             decoded_bytes = base64.urlsafe_b64decode(clean_code)
         except Exception:
             try:
                 decoded_bytes = base64.b85decode(clean_code)
             except Exception:
-                decoded_bytes = base64.b64decode(clean_code)
+                try:
+                    decoded_bytes = base64.b64decode(clean_code)
+                except Exception:
+                    return False, "Invalid code format. Please check and try again."
 
         try:
             decompressed = zlib.decompress(decoded_bytes)
             payload = json.loads(decompressed.decode("utf-8"))
-        except Exception:
-            payload = json.loads(decoded_bytes.decode("utf-8"))
+        except Exception as e:
+            return False, f"Failed to decompress code: {str(e)}"
 
         item_type = payload.get("type", "deck")
         
@@ -361,386 +396,456 @@ def import_any_code(encoded_code, target_path):
 
 def navigate_to(page, deck_name=None, location=None):
     st.session_state.current_page = page
-    st.session_state.show_ans = False
-    st.session_state.show_srs = False
-    st.session_state.reveal_blanks = False
     if deck_name:
         st.session_state.active_deck = deck_name
     if location:
         st.session_state.deck_location = location
 
-# Run URL import check on app refresh
-check_and_handle_url_import()
-
-# Page: Home (Dashboard)
+# Page: Home
 def render_home():
     st.title("📚 HKDSE Flashcard Hub")
-    st.write("Organize, study, and master your flashcards with spaced repetition!")
-
-    # Sidebar for folder navigation
-    with st.sidebar:
-        st.subheader("📁 Folders & Decks")
+    
+    check_and_handle_url_import()
+    
+    # Initialize session state for dialogs
+    if "show_create_deck" not in st.session_state:
+        st.session_state.show_create_deck = False
+    if "show_create_folder" not in st.session_state:
+        st.session_state.show_create_folder = False
+    if "show_import_deck" not in st.session_state:
+        st.session_state.show_import_deck = False
+    
+    col1, col2, col3 = st.columns([2, 2, 1])
+    
+    # Create Deck
+    with col1:
+        if st.button("➕ Create Deck", use_container_width=True, key="btn_create_deck"):
+            st.session_state.show_create_deck = not st.session_state.show_create_deck
         
-        # Create new folder
-        with st.expander("➕ Create New Folder"):
-            new_folder_name = st.text_input("Folder Name", key="create_folder_input")
-            parent_folder_display = st.selectbox(
-                "Parent Folder",
-                ["Root"] + [p.replace("Root (Unsorted)", "Root") for p in list_all_folder_paths()[1:]],
-                key="parent_folder_select"
-            )
-            if st.button("Create Folder", key="create_folder_btn", use_container_width=True):
-                if new_folder_name.strip():
-                    if parent_folder_display == "Root":
-                        st.session_state.data["files"][new_folder_name.strip()] = {"folders": {}}
-                    else:
-                        parent_path = parent_folder_display.split(" / ")
-                        parent_dict = get_folder_dict(parent_path) if parent_path else st.session_state.data["files"]
-                        if parent_dict and parent_path[-1] in parent_dict:
-                            if "folders" not in parent_dict[parent_path[-1]]:
-                                parent_dict[parent_path[-1]]["folders"] = {}
-                            parent_dict[parent_path[-1]]["folders"][new_folder_name.strip()] = {"folders": {}}
-                    save_data(st.session_state.data)
-                    st.rerun()
-
-        # Browse folders and decks
-        def render_sidebar_tree(folder_dict, path):
-            for name, info in list(folder_dict.items()):
-                current_path = path + [name]
-                path_key = "_".join(current_path)
-
-                with st.expander(f"📂 {name}", expanded=False):
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        if st.button("✏️", key=f"rename_folder_btn_{path_key}", use_container_width=True, help="Rename Folder"):
-                            st.session_state[f"editing_rename_folder_{path_key}"] = not st.session_state.get(f"editing_rename_folder_{path_key}", False)
+        if st.session_state.show_create_deck:
+            with st.container(border=True):
+                new_deck_name = st.text_input("Deck name:", key="deck_name_input")
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    if st.button("Create", use_container_width=True, key="btn_confirm_deck"):
+                        if new_deck_name.strip():
+                            st.session_state.data["unsorted_decks"][new_deck_name.strip()] = []
+                            save_data(st.session_state.data)
+                            st.success("Deck created!")
+                            st.session_state.show_create_deck = False
                             st.rerun()
-                    with col2:
-                        if st.button("📤", key=f"move_folder_btn_{path_key}", use_container_width=True, help="Move Folder"):
-                            st.session_state[f"moving_folder_{path_key}"] = not st.session_state.get(f"moving_folder_{path_key}", False)
+                        else:
+                            st.error("Please enter a deck name")
+                with col_b:
+                    if st.button("Cancel", use_container_width=True, key="btn_cancel_deck"):
+                        st.session_state.show_create_deck = False
+                        st.rerun()
+    
+    # Create Folder
+    with col2:
+        if st.button("📁 Create Folder", use_container_width=True, key="btn_create_folder"):
+            st.session_state.show_create_folder = not st.session_state.show_create_folder
+        
+        if st.session_state.show_create_folder:
+            with st.container(border=True):
+                new_folder_name = st.text_input("Folder name:", key="folder_name_input")
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    if st.button("Create", use_container_width=True, key="btn_confirm_folder"):
+                        if new_folder_name.strip():
+                            st.session_state.data["files"][new_folder_name.strip()] = {"folders": {}, "decks": {}}
+                            save_data(st.session_state.data)
+                            st.success("Folder created!")
+                            st.session_state.show_create_folder = False
                             st.rerun()
-                    with col3:
-                        if st.button("📋", key=f"code_folder_btn_{path_key}", use_container_width=True, help="Get Folder Code"):
-                            st.session_state[f"show_code_folder_{path_key}"] = not st.session_state.get(f"show_code_folder_{path_key}", False)
-                            st.rerun()
-                    with col4:
-                        if st.button("🗑️", key=f"delete_folder_btn_{path_key}", use_container_width=True, help="Delete Folder"):
-                            if st.session_state.get(f"confirm_delete_folder_{path_key}"):
-                                delete_folder(name, path)
-                                st.session_state[f"confirm_delete_folder_{path_key}"] = False
+                        else:
+                            st.error("Please enter a folder name")
+                with col_b:
+                    if st.button("Cancel", use_container_width=True, key="btn_cancel_folder"):
+                        st.session_state.show_create_folder = False
+                        st.rerun()
+    
+    # Import Deck
+    with col3:
+        if st.button("📤 Import", use_container_width=True, key="btn_import_deck"):
+            st.session_state.show_import_deck = not st.session_state.show_import_deck
+        
+        if st.session_state.show_import_deck:
+            with st.container(border=True):
+                import_code = st.text_input("Paste code:", key="import_code_input")
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    if st.button("Import", use_container_width=True, key="btn_confirm_import"):
+                        if import_code.strip():
+                            success, message = import_any_code(import_code.strip(), "unsorted")
+                            if success:
+                                st.success(message)
+                                st.session_state.show_import_deck = False
                                 st.rerun()
                             else:
-                                st.session_state[f"confirm_delete_folder_{path_key}"] = True
-                                st.rerun()
-
-                    if st.session_state.get(f"show_code_folder_{path_key}"):
-                        st.code(export_folder_code(name, info))
+                                st.error(message)
+                        else:
+                            st.error("Please paste an import code")
+                with col_b:
+                    if st.button("Cancel", use_container_width=True, key="btn_cancel_import"):
+                        st.session_state.show_import_deck = False
+                        st.rerun()
+    
+    st.divider()
+    
+    # Display unsorted decks
+    if st.session_state.data.get("unsorted_decks"):
+        st.subheader("📇 Unsorted Decks")
+        for deck_name, cards in st.session_state.data["unsorted_decks"].items():
+            with st.container(border=True):
+                col_deck, col_study, col_edit, col_export, col_more = st.columns([2, 1.2, 1, 1.2, 1])
+                with col_deck:
+                    st.write(f"**{deck_name}** ({len(cards)} cards)")
+                with col_study:
+                    if st.button("Study", key=f"study_{deck_name}_unsorted", use_container_width=True):
+                        st.session_state.review_cards = [c.copy() for c in cards]
+                        st.session_state.review_idx = 0
+                        st.session_state.show_ans = False
+                        st.session_state.show_srs = False
+                        st.session_state.review_mode = "study"
+                        navigate_to("review", deck_name, "unsorted")
+                        st.rerun()
+                with col_edit:
+                    if st.button("Edit", key=f"edit_{deck_name}_unsorted", use_container_width=True):
+                        navigate_to("editor", deck_name, "unsorted")
+                        st.rerun()
+                with col_export:
+                    if st.button("Export", key=f"exp_{deck_name}_unsorted", use_container_width=True):
+                        export_code = export_deck_code(deck_name, cards)
+                        st.code(export_code, language="text")
+                with col_more:
+                    if st.button("⋮", key=f"more_{deck_name}_unsorted"):
+                        st.session_state[f"show_options_{deck_name}_unsorted"] = not st.session_state.get(f"show_options_{deck_name}_unsorted", False)
+                        st.rerun()
+                
+                if st.session_state.get(f"show_options_{deck_name}_unsorted"):
+                    opt_col1, opt_col2, opt_col3, opt_col4 = st.columns(4)
+                    with opt_col1:
+                        new_name = st.text_input("New name:", key=f"rename_{deck_name}_unsorted")
+                        if st.button("Rename", key=f"rename_btn_{deck_name}_unsorted", use_container_width=True):
+                            rename_deck(deck_name, new_name, "unsorted")
+                            st.session_state[f"show_options_{deck_name}_unsorted"] = False
+                            st.rerun()
+                    with opt_col2:
+                        if st.button("Shuffle", key=f"shuffle_{deck_name}_unsorted", use_container_width=True):
+                            shuffle_deck(deck_name, "unsorted")
+                            st.session_state[f"show_options_{deck_name}_unsorted"] = False
+                            st.rerun()
+                    with opt_col3:
+                        if st.button("Move", key=f"move_unsorted_{deck_name}", use_container_width=True):
+                            st.session_state[f"moving_{deck_name}_unsorted"] = not st.session_state.get(f"moving_{deck_name}_unsorted", False)
+                            st.rerun()
+                    with opt_col4:
+                        if st.button("Delete", key=f"delete_{deck_name}_unsorted", use_container_width=True):
+                            delete_deck(deck_name, "unsorted")
+                            st.session_state[f"show_options_{deck_name}_unsorted"] = False
+                            st.rerun()
                     
-                    if st.session_state.get(f"editing_rename_folder_{path_key}"):
-                        ren_col1, ren_col2 = st.columns([2, 1])
-                        with ren_col1:
-                            new_name = st.text_input("New folder name", value=name, key=f"rename_input_folder_{path_key}", label_visibility="collapsed")
-                        with ren_col2:
-                            if st.button("✓ Save", key=f"save_rename_folder_{path_key}", use_container_width=True):
-                                if new_name.strip() and new_name != name:
-                                    rename_folder(name, new_name, path)
-                                st.session_state[f"editing_rename_folder_{path_key}"] = False
-                                st.rerun()
-                    
-                    if st.session_state.get(f"moving_folder_{path_key}"):
-                        target_folder = st.selectbox("Move to:", [p for p in list_all_folder_paths() if p != "Root (Unsorted)" and p != " / ".join(current_path)], key=f"move_target_folder_{path_key}")
-                        move_col1, move_col2 = st.columns([1, 1])
-                        with move_col1:
-                            if st.button("✓ Move", key=f"confirm_move_folder_{path_key}", use_container_width=True):
-                                move_folder(name, path, target_folder)
-                                st.session_state[f"moving_folder_{path_key}"] = False
-                                st.rerun()
-                        with move_col2:
-                            if st.button("✕ Cancel", key=f"cancel_move_folder_{path_key}", use_container_width=True):
-                                st.session_state[f"moving_folder_{path_key}"] = False
-                                st.rerun()
-
-                    # Decks in this folder
-                    decks = info.get("decks", {})
-                    for deck_name in list(decks.keys()):
-                        deck_key = f"{path_key}_{deck_name}"
-                        deck_col1, deck_col2, deck_col3, deck_col4, deck_col5, deck_col6, deck_col7 = st.columns([2, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8])
-                        with deck_col1:
-                            if st.button(f"{deck_name}", key=f"open_deck_{deck_key}", use_container_width=True):
-                                navigate_to("editor", deck_name, current_path)
-                        with deck_col2:
-                            if st.button("🔀", key=f"shuffle_{deck_key}", help="Shuffle Deck Cards", use_container_width=True):
-                                shuffle_deck(deck_name, current_path)
-                                st.success("Shuffled!")
-                                st.rerun()
-                        with deck_col3:
-                            if st.button("📖", key=f"review_{deck_key}", help="Review (Due)", use_container_width=True):
-                                st.session_state.review_cards = [c for c in decks[deck_name] if c.get("next_review", 0) <= time.time()]
+                    # Separate move dialog
+                    if st.session_state.get(f"moving_{deck_name}_unsorted"):
+                        st.divider()
+                        with st.container(border=True):
+                            st.write("**Move deck to folder:**")
+                            all_paths = list_all_folder_paths()
+                            folder_options = [p for p in all_paths if p != "Root (Unsorted)"]
+                            
+                            if folder_options:
+                                target = st.selectbox("Select destination:", folder_options, key=f"move_target_unsorted_{deck_name}")
+                                move_col1, move_col2 = st.columns(2)
+                                with move_col1:
+                                    if st.button("✓ Confirm Move", key=f"confirm_move_unsorted_{deck_name}", use_container_width=True):
+                                        if move_deck(deck_name, "unsorted", target):
+                                            st.success(f"✓ Moved '{deck_name}' to '{target}'")
+                                            st.session_state[f"moving_{deck_name}_unsorted"] = False
+                                            st.session_state[f"show_options_{deck_name}_unsorted"] = False
+                                            st.rerun()
+                                with move_col2:
+                                    if st.button("✕ Cancel", key=f"cancel_move_unsorted_{deck_name}", use_container_width=True):
+                                        st.session_state[f"moving_{deck_name}_unsorted"] = False
+                                        st.rerun()
+                            else:
+                                st.info("📁 Create a folder first to move decks")
+    
+    # Display folder structure
+    def display_folder_tree(folder_dict, path=[]):
+        for folder_name, folder_info in folder_dict.items():
+            with st.expander(f"📁 {folder_name}", expanded=False):
+                current_path = path + [folder_name]
+                
+                # Decks in this folder
+                if "decks" in folder_info and folder_info["decks"]:
+                    st.write("**Decks:**")
+                    for deck_name, cards in folder_info["decks"].items():
+                        col_deck, col_study, col_edit, col_export, col_more = st.columns([2, 1.2, 1, 1.2, 1])
+                        with col_deck:
+                            st.write(f"• {deck_name} ({len(cards)} cards)")
+                        with col_study:
+                            if st.button("Study", key=f"study_{deck_name}_{'/'.join(current_path)}", use_container_width=True):
+                                st.session_state.review_cards = [c.copy() for c in cards]
                                 st.session_state.review_idx = 0
+                                st.session_state.show_ans = False
+                                st.session_state.show_srs = False
                                 st.session_state.review_mode = "study"
                                 navigate_to("review", deck_name, current_path)
-                        with deck_col4:
-                            if st.button("🎯", key=f"practice_{deck_key}", help="Practice", use_container_width=True):
-                                st.session_state.review_cards = decks[deck_name].copy()
-                                random.shuffle(st.session_state.review_cards)
-                                st.session_state.review_idx = 0
-                                st.session_state.review_mode = "practice"
-                                navigate_to("review", deck_name, current_path)
-                        with deck_col5:
-                            if st.button("✏️", key=f"rename_deck_{deck_key}", help="Rename", use_container_width=True):
-                                st.session_state[f"editing_rename_deck_{deck_key}"] = not st.session_state.get(f"editing_rename_deck_{deck_key}", False)
                                 st.rerun()
-                        with deck_col6:
-                            if st.button("📤", key=f"move_deck_{deck_key}", help="Move", use_container_width=True):
-                                st.session_state[f"moving_deck_{deck_key}"] = not st.session_state.get(f"moving_deck_{deck_key}", False)
+                        with col_edit:
+                            if st.button("Edit", key=f"edit_{deck_name}_{'/'.join(current_path)}", use_container_width=True):
+                                navigate_to("editor", deck_name, current_path)
                                 st.rerun()
-                        with deck_col7:
-                            if st.button("🗑️", key=f"delete_deck_{deck_key}", help="Delete", use_container_width=True):
-                                if st.session_state.get(f"confirm_delete_deck_{deck_key}"):
+                        with col_export:
+                            if st.button("Export", key=f"exp_{deck_name}_{'/'.join(current_path)}", use_container_width=True):
+                                export_code = export_deck_code(deck_name, cards)
+                                st.code(export_code, language="text")
+                        with col_more:
+                            if st.button("⋮", key=f"more_{deck_name}_{'/'.join(current_path)}"):
+                                st.session_state[f"show_options_{deck_name}_{'/'.join(current_path)}"] = not st.session_state.get(f"show_options_{deck_name}_{'/'.join(current_path)}", False)
+                                st.rerun()
+                        
+                        if st.session_state.get(f"show_options_{deck_name}_{'/'.join(current_path)}"):
+                            opt_col1, opt_col2, opt_col3, opt_col4 = st.columns(4)
+                            with opt_col1:
+                                new_name = st.text_input("New name:", key=f"rename_{deck_name}_{'/'.join(current_path)}")
+                                if st.button("Rename", key=f"rename_btn_{deck_name}_{'/'.join(current_path)}", use_container_width=True):
+                                    rename_deck(deck_name, new_name, current_path)
+                                    st.session_state[f"show_options_{deck_name}_{'/'.join(current_path)}"] = False
+                                    st.rerun()
+                            with opt_col2:
+                                if st.button("Shuffle", key=f"shuffle_{deck_name}_{'/'.join(current_path)}", use_container_width=True):
+                                    shuffle_deck(deck_name, current_path)
+                                    st.session_state[f"show_options_{deck_name}_{'/'.join(current_path)}"] = False
+                                    st.rerun()
+                            with opt_col3:
+                                if st.button("Move", key=f"move_folder_{deck_name}_{'/'.join(current_path)}", use_container_width=True):
+                                    st.session_state[f"moving_{deck_name}_{'/'.join(current_path)}"] = not st.session_state.get(f"moving_{deck_name}_{'/'.join(current_path)}", False)
+                                    st.rerun()
+                            with opt_col4:
+                                if st.button("Delete", key=f"delete_{deck_name}_{'/'.join(current_path)}", use_container_width=True):
                                     delete_deck(deck_name, current_path)
-                                    st.session_state[f"confirm_delete_deck_{deck_key}"] = False
+                                    st.session_state[f"show_options_{deck_name}_{'/'.join(current_path)}"] = False
                                     st.rerun()
-                                else:
-                                    st.session_state[f"confirm_delete_deck_{deck_key}"] = True
-                                    st.rerun()
-                        
-                        if st.session_state.get(f"editing_rename_deck_{deck_key}"):
-                            ren_col1, ren_col2 = st.columns([2, 1])
-                            with ren_col1:
-                                new_deck_name = st.text_input("New name", value=deck_name, key=f"rename_input_deck_{deck_key}", label_visibility="collapsed")
-                            with ren_col2:
-                                if st.button("✓ Save", key=f"save_rename_deck_{deck_key}", use_container_width=True):
-                                    if new_deck_name.strip() and new_deck_name != deck_name:
-                                        rename_deck(deck_name, new_deck_name, current_path)
-                                    st.session_state[f"editing_rename_deck_{deck_key}"] = False
-                                    st.rerun()
-                        
-                        if st.session_state.get(f"moving_deck_{deck_key}"):
-                            target_folder = st.selectbox("Move to:", list_all_folder_paths(), key=f"move_target_{deck_key}")
-                            move_col1, move_col2 = st.columns([1, 1])
+                            
+                            # Separate move dialog
+                            if st.session_state.get(f"moving_{deck_name}_{'/'.join(current_path)}"):
+                                st.divider()
+                                with st.container(border=True):
+                                    st.write("**Move deck to folder:**")
+                                    all_paths = list_all_folder_paths()
+                                    
+                                    if all_paths:
+                                        target = st.selectbox("Select destination:", all_paths, key=f"move_target_folder_{deck_name}_{'/'.join(current_path)}")
+                                        move_col1, move_col2 = st.columns(2)
+                                        with move_col1:
+                                            if st.button("✓ Confirm Move", key=f"confirm_move_folder_{deck_name}_{'/'.join(current_path)}", use_container_width=True):
+                                                if move_deck(deck_name, current_path, target):
+                                                    st.success(f"✓ Moved '{deck_name}' to '{target}'")
+                                                    st.session_state[f"moving_{deck_name}_{'/'.join(current_path)}"] = False
+                                                    st.session_state[f"show_options_{deck_name}_{'/'.join(current_path)}"] = False
+                                                    st.rerun()
+                                        with move_col2:
+                                            if st.button("✕ Cancel", key=f"cancel_move_folder_{deck_name}_{'/'.join(current_path)}", use_container_width=True):
+                                                st.session_state[f"moving_{deck_name}_{'/'.join(current_path)}"] = False
+                                                st.rerun()
+                                    else:
+                                        st.info("No destinations available")
+                
+                # Subfolders
+                if "folders" in folder_info and folder_info["folders"]:
+                    display_folder_tree(folder_info["folders"], current_path)
+                
+                # Folder options
+                col_f1, col_f2 = st.columns(2)
+                with col_f1:
+                    if st.button("Move Folder", key=f"move_folder_{folder_name}", use_container_width=True):
+                        st.session_state[f"moving_folder_{folder_name}"] = not st.session_state.get(f"moving_folder_{folder_name}", False)
+                        st.rerun()
+                    
+                    # Move folder dialog
+                    if st.session_state.get(f"moving_folder_{folder_name}"):
+                        st.divider()
+                        with st.container(border=True):
+                            st.write("**Move folder to new location:**")
+                            all_paths = list_all_folder_paths()
+                            target = st.selectbox("Select destination:", all_paths, key=f"move_target_{folder_name}")
+                            move_col1, move_col2 = st.columns(2)
                             with move_col1:
-                                if st.button("✓ Move", key=f"confirm_move_{deck_key}", use_container_width=True):
-                                    move_deck(deck_name, current_path, target_folder)
-                                    st.session_state[f"moving_deck_{deck_key}"] = False
-                                    st.rerun()
+                                if st.button("✓ Confirm", key=f"confirm_move_{folder_name}", use_container_width=True):
+                                    if target:
+                                        move_folder(folder_name, path, target)
+                                        st.success(f"✓ Folder moved!")
+                                        st.session_state[f"moving_folder_{folder_name}"] = False
+                                        st.rerun()
                             with move_col2:
-                                if st.button("✕ Cancel", key=f"cancel_move_{deck_key}", use_container_width=True):
-                                    st.session_state[f"moving_deck_{deck_key}"] = False
+                                if st.button("✕ Cancel", key=f"cancel_move_{folder_name}", use_container_width=True):
+                                    st.session_state[f"moving_folder_{folder_name}"] = False
                                     st.rerun()
-
-                    # Nested folders
-                    if info.get("folders"):
-                        st.subheader("Subfolders")
-                        render_sidebar_tree(info["folders"], current_path)
-
-        render_sidebar_tree(st.session_state.data["files"], [])
-
-        # Unsorted decks
-        st.divider()
-        st.subheader("Unsorted Decks")
-        for deck_name in list(st.session_state.data["unsorted_decks"].keys()):
-            unsorted_key = f"unsorted_{deck_name}"
-            deck_col1, deck_col2, deck_col3, deck_col4, deck_col5, deck_col6, deck_col7 = st.columns([2, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8])
-            with deck_col1:
-                if st.button(f"{deck_name}", key=f"open_{unsorted_key}", use_container_width=True):
-                    navigate_to("editor", deck_name, "unsorted")
-            with deck_col2:
-                if st.button("🔀", key=f"shuffle_{unsorted_key}", help="Shuffle Deck Cards", use_container_width=True):
-                    shuffle_deck(deck_name, "unsorted")
-                    st.success("Shuffled!")
-                    st.rerun()
-            with deck_col3:
-                if st.button("📖", key=f"review_{unsorted_key}", help="Review (Due)", use_container_width=True):
-                    st.session_state.review_cards = [c for c in st.session_state.data["unsorted_decks"][deck_name] if c.get("next_review", 0) <= time.time()]
-                    st.session_state.review_idx = 0
-                    st.session_state.review_mode = "study"
-                    navigate_to("review", deck_name, "unsorted")
-            with deck_col4:
-                if st.button("🎯", key=f"practice_{unsorted_key}", help="Practice", use_container_width=True):
-                    st.session_state.review_cards = st.session_state.data["unsorted_decks"][deck_name].copy()
-                    random.shuffle(st.session_state.review_cards)
-                    st.session_state.review_idx = 0
-                    st.session_state.review_mode = "practice"
-                    navigate_to("review", deck_name, "unsorted")
-            with deck_col5:
-                if st.button("✏️", key=f"rename_{unsorted_key}", help="Rename", use_container_width=True):
-                    st.session_state[f"editing_rename_{unsorted_key}"] = not st.session_state.get(f"editing_rename_{unsorted_key}", False)
-                    st.rerun()
-            with deck_col6:
-                if st.button("📤", key=f"move_{unsorted_key}", help="Move", use_container_width=True):
-                    st.session_state[f"moving_{unsorted_key}"] = not st.session_state.get(f"moving_{unsorted_key}", False)
-                    st.rerun()
-            with deck_col7:
-                if st.button("🗑️", key=f"delete_{unsorted_key}", help="Delete", use_container_width=True):
-                    if st.session_state.get(f"confirm_delete_{unsorted_key}"):
-                        delete_deck(deck_name, "unsorted")
-                        st.session_state[f"confirm_delete_{unsorted_key}"] = False
+                
+                with col_f2:
+                    if st.button("Delete Folder", key=f"del_folder_{folder_name}", use_container_width=True):
+                        delete_folder(folder_name, path)
+                        st.success("Folder deleted!")
                         st.rerun()
-                    else:
-                        st.session_state[f"confirm_delete_{unsorted_key}"] = True
-                        st.rerun()
-            
-            if st.session_state.get(f"editing_rename_{unsorted_key}"):
-                ren_col1, ren_col2 = st.columns([2, 1])
-                with ren_col1:
-                    new_deck_name = st.text_input("New name", value=deck_name, key=f"rename_input_{unsorted_key}", label_visibility="collapsed")
-                with ren_col2:
-                    if st.button("✓ Save", key=f"save_rename_{unsorted_key}", use_container_width=True):
-                        if new_deck_name.strip() and new_deck_name != deck_name:
-                            rename_deck(deck_name, new_deck_name, "unsorted")
-                        st.session_state[f"editing_rename_{unsorted_key}"] = False
-                        st.rerun()
-            
-            if st.session_state.get(f"moving_{unsorted_key}"):
-                target_folder = st.selectbox("Move to:", list_all_folder_paths(), key=f"move_target_{unsorted_key}")
-                move_col1, move_col2 = st.columns([1, 1])
-                with move_col1:
-                    if st.button("✓ Move", key=f"confirm_move_{unsorted_key}", use_container_width=True):
-                        move_deck(deck_name, "unsorted", target_folder)
-                        st.session_state[f"moving_{unsorted_key}"] = False
-                        st.rerun()
-                with move_col2:
-                    if st.button("✕ Cancel", key=f"cancel_move_{unsorted_key}", use_container_width=True):
-                        st.session_state[f"moving_{unsorted_key}"] = False
-                        st.rerun()
-
-    # Main Content
-    col1, col2 = st.columns(2)
-    with col1:
-        with st.expander("➕ Create New Deck", expanded=False):
-            new_deck_name = st.text_input("Deck Name", key="new_deck_name_input")
-            target_folder = st.selectbox("Target Folder", list_all_folder_paths(), key="target_folder_select")
-            if st.button("Create Deck", use_container_width=True):
-                if new_deck_name.strip():
-                    if target_folder == "Root (Unsorted)":
-                        st.session_state.data["unsorted_decks"][new_deck_name.strip()] = []
-                    else:
-                        target_path = target_folder.split(" / ")
-                        target_dict = get_folder_dict(target_path[:-1]) if len(target_path) > 1 else st.session_state.data["files"]
-                        if target_path[-1] in target_dict:
-                            if "decks" not in target_dict[target_path[-1]]:
-                                target_dict[target_path[-1]]["decks"] = {}
-                            target_dict[target_path[-1]]["decks"][new_deck_name.strip()] = []
-                    save_data(st.session_state.data)
-                    st.rerun()
-
-    with col2:
-        with st.expander("📥 Import Deck or Folder from Code / Link", expanded=False):
-            import_code = st.text_area("Paste code or shareable link parameter here", key="import_code_input")
-            target_import = st.selectbox("Import to", list_all_folder_paths(), key="import_target")
-            if st.button("Import Item", use_container_width=True):
-                if import_code.strip():
-                    # Strip URL prefix if user pastes full share link
-                    clean_input = import_code.strip()
-                    if "?deck=" in clean_input:
-                        clean_input = clean_input.split("?deck=")[-1]
-
-                    target_path = "unsorted" if target_import == "Root (Unsorted)" else target_import.split(" / ")
-                    success, message = import_any_code(clean_input, target_path)
-                    if success:
-                        st.success(message)
-                        st.rerun()
-                    else:
-                        st.error(message)
+    
+    if st.session_state.data.get("files"):
+        st.subheader("📂 Folder Structure")
+        display_folder_tree(st.session_state.data["files"])
 
 # Page: Editor
 def render_editor():
+    if not st.session_state.active_deck:
+        st.error("No deck selected!")
+        return
+    
     deck_name = st.session_state.active_deck
     location = st.session_state.deck_location
-
-    col_back, col_title, col_shuffle = st.columns([1, 3, 1])
-    with col_back:
-        if st.button("← Back", use_container_width=True):
-            navigate_to("home")
-    with col_title:
-        st.title(f"📝 Editing: {deck_name}")
-    with col_shuffle:
-        if st.button("🔀 Shuffle Deck", use_container_width=True):
-            shuffle_deck(deck_name, location)
-            st.success("Deck shuffled!")
-            st.rerun()
-
-    st.write(f"Location: {' / '.join(location) if location != 'unsorted' else 'Unsorted'}")
-
     cards = get_cards(deck_name, location)
-
-    with st.expander("🔗 Share Deck (Link & Code)"):
-        app_domain = st.text_input("App Base URL", value="https://your-app-name.streamlit.app", help="Replace with your deployed Streamlit URL")
-        
-        share_link = export_deck_link(deck_name, cards, base_url=app_domain)
-        export_code = export_deck_code(deck_name, cards)
-
-        st.subheader("🌐 Shareable Direct Link")
-        st.code(share_link)
-        st.caption("Anyone clicking this link will automatically import this deck when opening your app.")
-
-        st.subheader("📋 Raw Export Code")
-        st.code(export_code)
-
+    
+    st.title(f"✏️ Edit: {deck_name}")
+    
+    if st.button("← Back to Home"):
+        navigate_to("home")
+        st.rerun()
+    
+    st.divider()
+    
     with st.expander("➕ Add New Card", expanded=True):
-        card_type = st.selectbox("Card Type", ["Standard", "Fill in Blank", "Multiple Choice"], key="add_card_type")
-        
-        question_placeholder = "Type your question here..."
-        if card_type == "Fill in Blank":
-            question_placeholder = "Example: The capital of France is Paris."
-        
-        new_question = st.text_area("Question / Prompt", placeholder=question_placeholder, key="add_question_input")
-        uploaded_image = st.file_uploader("Attach Image (Optional)", type=["png", "jpg", "jpeg"], key="add_image_input")
+        card_type = st.radio("Card Type:", ["Standard", "Multiple Choice", "Fill in Blank"], horizontal=True, key="card_type_selector")
+        new_question = st.text_area("Question", height=100, key="new_q")
         
         new_answer = ""
         new_options = []
         new_explanation = ""
-
-        if card_type == "Standard":
-            st.divider()
-            new_answer = st.text_area("Answer", key="add_answer_input")
-
-        elif card_type == "Multiple Choice":
-            st.divider()
-            options_raw = st.text_area("Options (One per line)", placeholder="Option 1\nOption 2\nOption 3", key="add_options_input")
-            new_options = [o.strip() for o in options_raw.splitlines() if o.strip()]
+        uploaded_image = st.file_uploader("Upload image (optional)", type=["jpg", "jpeg", "png"])
+        
+        if card_type == "Multiple Choice":
+            st.subheader("📋 Multiple Choice Options")
+            num_options = st.number_input("Number of options:", min_value=2, max_value=10, value=4)
+            new_options = []
+            for i in range(num_options):
+                opt = st.text_input(f"Option {i+1}:", key=f"opt_{i}")
+                if opt.strip():
+                    new_options.append(opt.strip())
             
-            if new_options:
-                new_answer = st.selectbox("✅ Correct Answer", new_options, key="add_mc_answer_input")
+            new_answer = st.selectbox("✅ Correct Answer:", new_options if new_options else ["No options yet"], key="mc_ans")
+            new_explanation = st.text_area("💡 Explanation (optional)", height=80, key="mc_exp")
+        
+        elif card_type == "Standard":
+            new_answer = st.text_area("Answer", height=100, key="new_a")
+        
+        else:  # Fill in Blank
+            # Choose between blank mode or simple answer mode
+            fib_mode = st.radio("Mode:", ["Create Blanks {1:answer}", "Simple Answer"], horizontal=True, key="fib_mode_selector")
+            
+            # Initialize FIB state for new card
+            if "fib_new_state" not in st.session_state:
+                st.session_state.fib_new_state = ""
+            
+            fib_new_text = st.session_state.fib_new_state
+            
+            if fib_mode == "Simple Answer":
+                # Simple answer mode - just like Standard card
+                new_answer = st.text_area("Answer", height=100, key="fib_simple_answer")
+                fib_question = new_question
             else:
-                new_answer = st.text_input("✅ Correct Answer (Exact text match)", key="add_mc_answer_input")
+                # Blank creation mode
+                st.markdown("**Highlight text and click 'Make Blank' to create blanks**")
                 
-            new_explanation = st.text_area("💡 Explanation (Optional)", key="add_explanation_input")
-
-        elif card_type == "Fill in Blank":
-            st.divider()
-            st.subheader("🖱️ Interactive Blank Creator")
-            st.caption("Highlight text in the box below and click 'Turn Highlighted Text into Blank'.")
-            
-            components.html("""
-            <div style="font-family: sans-serif; color: white;">
-                <textarea id="blankTextarea" style="width: 100%; height: 90px; border-radius: 6px; padding: 8px; background: #1E293B; color: #FFF; border: 1px solid #475569;" placeholder="Paste text here, select word(s), and click below..."></textarea>
-                <div style="margin-top: 6px; display: flex; gap: 8px;">
-                    <button onclick="makeBlank()" style="background: #2563EB; color: white; border: none; padding: 8px 12px; border-radius: 6px; font-weight: bold; cursor: pointer;">✨ Turn Highlighted Text into Blank</button>
-                    <button onclick="copyToClipboard()" style="background: #059669; color: white; border: none; padding: 8px 12px; border-radius: 6px; font-weight: bold; cursor: pointer;">📋 Copy Result</button>
+                # Two-column layout: single editor on left, preview on right
+                col_input, col_preview = st.columns([1, 1])
+                
+                with col_input:
+                    fib_question = st.text_area(
+                        "Question",
+                        value=fib_new_text,
+                        key="fib_new_question",
+                        height=250,
+                        placeholder="Type or paste your question here, then highlight text and click 'Make Blank' below →"
+                    )
+                    st.session_state.fib_new_state = fib_question
+                
+                with col_preview:
+                    st.markdown("**Live Preview:**")
+                    blanks = re.findall(r"\{(\d+):([^\}]+)\}", fib_question)
+                    
+                    if blanks:
+                        # Preview with answers
+                        preview_study = fib_question
+                        for num, ans in blanks:
+                            preview_study = preview_study.replace(f"{{{num}:{ans}}}", f"<span class='highlighted-answer'>{ans}</span>")
+                        st.markdown(preview_study, unsafe_allow_html=True)
+                        st.caption("📖 Study mode")
+                        
+                        st.divider()
+                        
+                        # Preview without answers
+                        preview_practice = fib_question
+                        for num, ans in blanks:
+                            preview_practice = preview_practice.replace(f"{{{num}:{ans}}}", "`[ ____ ]`")
+                        st.markdown(preview_practice)
+                        st.caption("🎯 Practice mode")
+                        
+                        st.success(f"✓ {len(blanks)} blank(s) ready!")
+                    else:
+                        st.info("No blanks yet. Highlight text and use the tool below →")
+                
+                st.divider()
+                st.markdown("**🎯 Make Blanks:**")
+                
+                # Calculate the next blank number
+                existing_blanks = re.findall(r"\{(\d+):", fib_question)
+                next_blank_num = max([int(n) for n in existing_blanks] or [0]) + 1
+                
+                # Interactive blank maker (using HTML with proper escaping)
+                html_content = """
+                <div style="background-color: #f0f2f6; padding: 15px; border-radius: 8px;">
+                    <textarea id="fibTextareaNew" style="width: 100%; height: 80px; padding: 10px; font-family: monospace; border: 2px solid #ccc; border-radius: 4px; font-size: 14px;"></textarea>
+                    <div style="margin-top: 10px; display: flex; gap: 10px;">
+                        <button onclick="makeBlank()" style="padding: 8px 16px; background-color: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Make Blank</button>
+                        <button onclick="syncTextarea()" style="padding: 8px 16px; background-color: #666; color: white; border: none; border-radius: 4px; cursor: pointer;">Sync to Editor</button>
+                        <span id="status" style="margin-left: auto; color: #666; font-size: 12px;"></span>
+                    </div>
                 </div>
-            </div>
-            <script>
-                let blankCounter = 1;
-                function makeBlank() {
-                    let textarea = document.getElementById("blankTextarea");
-                    let start = textarea.selectionStart;
-                    let end = textarea.selectionEnd;
-                    let selected = textarea.value.substring(start, end);
-                    if (selected.trim().length > 0) {
-                        let replacement = "{" + blankCounter + ":" + selected + "}";
-                        blankCounter++;
+                <script>
+                    let blankCounter = """ + str(next_blank_num) + """;
+                    window.addEventListener('load', function() {
+                        document.getElementById("fibTextareaNew").value = `""" + fib_question.replace('`', '\\`') + """`;
+                    });
+                    
+                    function makeBlank() {
+                        let textarea = document.getElementById("fibTextareaNew");
+                        let start = textarea.selectionStart;
+                        let end = textarea.selectionEnd;
+                        let selected = textarea.value.substring(start, end);
+                        
+                        if (selected.trim().length === 0) {
+                            document.getElementById("status").textContent = "⚠️ Select text first!";
+                            return;
+                        }
+                        
+                        let replacement = "{" + blankCounter + ":" + selected.trim() + "}";
                         textarea.value = textarea.value.substring(0, start) + replacement + textarea.value.substring(end);
+                        blankCounter++;
+                        
+                        document.getElementById("status").textContent = "✓ Blank created!";
+                        setTimeout(() => { document.getElementById("status").textContent = ""; }, 2000);
+                        
+                        // Trigger Streamlit update
+                        textarea.dispatchEvent(new Event('change', { bubbles: true }));
                     }
-                }
-                function copyToClipboard() {
-                    let textarea = document.getElementById("blankTextarea");
-                    textarea.select();
-                    document.execCommand("copy");
-                    alert("Copied to clipboard!");
-                }
-            </script>
-            """, height=160)
+                    
+                    function syncTextarea() {
+                        let textarea = document.getElementById("fibTextareaNew");
+                        textarea.dispatchEvent(new Event('change', { bubbles: true }));
+                        document.getElementById("status").textContent = "✓ Synced!";
+                        setTimeout(() => { document.getElementById("status").textContent = ""; }, 1500);
+                    }
+                </script>
+                """
+                components.html(html_content, height=150)
 
         if st.button("💾 Add Card to Deck", type="primary", use_container_width=True, key="submit_add_card_btn"):
             if new_question.strip():
@@ -774,6 +879,13 @@ def render_editor():
                     card_data["options"] = new_options
                     card_data["answer"] = new_answer.strip()
                     card_data["explanation"] = new_explanation.strip()
+                elif card_type == "Fill in Blank":
+                    # Check if it's simple answer mode or blank mode
+                    if st.session_state.get("fib_mode_selector") == "Simple Answer":
+                        card_data["answer"] = new_answer.strip()
+                    else:
+                        # Blank mode - no simple answer field
+                        card_data["answer"] = ""
 
                 cards.append(card_data)
                 save_data(st.session_state.data)
@@ -818,96 +930,190 @@ def render_editor():
                         st.rerun()
 
                 elif c["type"] == "Multiple Choice":
-                    current_options = [str(opt).strip() for opt in c.get("options", []) if str(opt).strip()]
-                    current_ans = str(c.get("answer", "")).strip()
-
+                    # Initialize the editing state for this card
+                    if f"mc_edit_state_{idx}" not in st.session_state:
+                        st.session_state[f"mc_edit_state_{idx}"] = {
+                            "options": [str(opt).strip() for opt in c.get("options", []) if str(opt).strip()],
+                            "answer": str(c.get("answer", "")).strip()
+                        }
+                    
+                    edit_state = st.session_state[f"mc_edit_state_{idx}"]
+                    
                     new_question_edit = st.text_area("Question", value=c.get("question", ""), key=f"edit_q_{idx}", height=100)
                     
                     st.subheader("📋 Manage Options")
-                    updated_options = []
-                    for opt_idx, opt in enumerate(current_options):
+                    # Display existing options with delete buttons
+                    options_to_delete = []
+                    for opt_idx, opt in enumerate(edit_state["options"]):
                         opt_col1, opt_col2 = st.columns([4, 1])
                         with opt_col1:
-                            val = st.text_input(f"Option {opt_idx + 1}", value=opt, key=f"opt_val_{idx}_{opt_idx}")
-                            if val.strip():
-                                updated_options.append(val.strip())
+                            new_val = st.text_input(f"Option {opt_idx + 1}", value=opt, key=f"opt_edit_{idx}_{opt_idx}")
+                            # Update the option in place
+                            if new_val.strip():
+                                edit_state["options"][opt_idx] = new_val.strip()
                         with opt_col2:
                             if st.button("Delete", key=f"del_opt_{idx}_{opt_idx}", use_container_width=True, help="🗑️ Delete option"):
-                                current_options.pop(opt_idx)
-                                c["options"] = current_options
-                                if current_ans not in current_options and current_options:
-                                    c["answer"] = current_options[0]
-                                save_data(st.session_state.data)
-                                st.rerun()
-
+                                options_to_delete.append(opt_idx)
+                    
+                    # Handle deletions in reverse order to maintain correct indices
+                    for opt_idx in sorted(options_to_delete, reverse=True):
+                        deleted_option = edit_state["options"].pop(opt_idx)
+                        # If the deleted option was the answer, reset the answer
+                        if edit_state["answer"] == deleted_option:
+                            edit_state["answer"] = ""
+                    
+                    # Add new option
                     st.write("**Add new option:**")
                     new_opt_col1, new_opt_col2 = st.columns([4, 1])
                     with new_opt_col1:
                         new_option = st.text_input("New option text", key=f"new_opt_{idx}")
                     with new_opt_col2:
                         if st.button("Add Option", key=f"add_opt_{idx}", use_container_width=True):
-                            if new_option.strip() and new_option.strip() not in updated_options:
-                                updated_options.append(new_option.strip())
-                                c["options"] = updated_options
-                                save_data(st.session_state.data)
+                            if new_option.strip() and new_option.strip() not in edit_state["options"]:
+                                edit_state["options"].append(new_option.strip())
                                 st.rerun()
-
-                    ans_idx = updated_options.index(current_ans) if current_ans in updated_options else 0
-                    if updated_options:
-                        new_answer_edit = st.selectbox("✅ Correct Answer", updated_options, index=ans_idx, key=f"edit_a_{idx}")
+                            elif new_option.strip() in edit_state["options"]:
+                                st.warning("This option already exists!")
+                    
+                    # Select correct answer
+                    if edit_state["options"]:
+                        ans_idx = edit_state["options"].index(edit_state["answer"]) if edit_state["answer"] in edit_state["options"] else 0
+                        new_answer_edit = st.selectbox("✅ Correct Answer", edit_state["options"], index=ans_idx, key=f"edit_a_{idx}")
+                        edit_state["answer"] = new_answer_edit
                     else:
-                        new_answer_edit = ""
                         st.warning("⚠️ Please add at least one option.")
+                        new_answer_edit = ""
 
                     new_explanation_edit = st.text_area("💡 Explanation", value=c.get("explanation", ""), key=f"edit_exp_{idx}", height=80)
 
                     if st.button("💾 Save All Changes", type="primary", use_container_width=True, key=f"save_mc_edit_{idx}"):
-                        if not updated_options:
+                        if not edit_state["options"]:
                             st.error("Multiple choice questions require options!")
-                        elif not new_answer_edit:
+                        elif not edit_state["answer"]:
                             st.error("Please select a correct answer!")
                         else:
                             c["question"] = new_question_edit.strip()
-                            c["options"] = updated_options
-                            c["answer"] = new_answer_edit
+                            c["options"] = edit_state["options"]
+                            c["answer"] = edit_state["answer"]
                             c["explanation"] = new_explanation_edit.strip()
                             save_data(st.session_state.data)
                             st.session_state[f"editing_{idx}"] = False
+                            if f"mc_edit_state_{idx}" in st.session_state:
+                                del st.session_state[f"mc_edit_state_{idx}"]
                             st.rerun()
 
                 else:  # Fill in Blank
-                    new_question_edit = st.text_area(
-                        "Question (Format: {1:answer1} and {2:answer2})", 
-                        value=c.get("question", ""), 
-                        key=f"edit_q_{idx}",
-                        height=120,
-                        help="Use {number:answer} for each blank."
-                    )
+                    # Initialize FIB edit state if needed
+                    if f"fib_edit_state_{idx}" not in st.session_state:
+                        st.session_state[f"fib_edit_state_{idx}"] = c.get("question", "")
                     
-                    st.subheader("👁️ Live Preview")
-                    blanks = re.findall(r"\{(\d+):([^\}]+)\}", new_question_edit)
-                    if blanks:
-                        preview_text = new_question_edit
-                        for num, ans in blanks:
-                            preview_text = preview_text.replace(f"{{{num}:{ans}}}", f"<span class='highlighted-answer'>{ans}</span>")
-                        st.markdown("**With answers highlighted (study mode):**")
-                        st.markdown(preview_text, unsafe_allow_html=True)
-                        
-                        preview_blanks = new_question_edit
-                        for num, ans in blanks:
-                            preview_blanks = preview_blanks.replace(f"{{{num}:{ans}}}", " `[ ____ ]` ")
-                        st.markdown("**During practice (blanks to fill):**")
-                        st.markdown(preview_blanks)
-                        
-                        st.info(f"✓ Found {len(blanks)} blank(s) to fill")
-                    else:
-                        st.warning("⚠️ No blanks detected. Use format {number:answer}")
+                    fib_text = st.session_state[f"fib_edit_state_{idx}"]
                     
+                    st.markdown("**Select text below and click 'Make Blank' to create blanks**")
+                    
+                    # Two-column layout: single editor on left, preview on right
+                    col_input, col_preview = st.columns([1, 1])
+                    
+                    with col_input:
+                        new_question_edit = st.text_area(
+                            "Question",
+                            value=fib_text,
+                            key=f"edit_q_{idx}",
+                            height=250
+                        )
+                        st.session_state[f"fib_edit_state_{idx}"] = new_question_edit
+                    
+                    with col_preview:
+                        st.markdown("**Live Preview:**")
+                        blanks = re.findall(r"\{(\d+):([^\}]+)\}", new_question_edit)
+                        
+                        if blanks:
+                            # Preview with answers
+                            preview_study = new_question_edit
+                            for num, ans in blanks:
+                                preview_study = preview_study.replace(f"{{{num}:{ans}}}", f"<span class='highlighted-answer'>{ans}</span>")
+                            st.markdown(preview_study, unsafe_allow_html=True)
+                            st.caption("📖 Study mode")
+                            
+                            st.divider()
+                            
+                            # Preview without answers
+                            preview_practice = new_question_edit
+                            for num, ans in blanks:
+                                preview_practice = preview_practice.replace(f"{{{num}:{ans}}}", "`[ ____ ]`")
+                            st.markdown(preview_practice)
+                            st.caption("🎯 Practice mode")
+                            
+                            st.success(f"✓ {len(blanks)} blank(s) ready!")
+                        else:
+                            st.info("No blanks yet. Highlight text and use the tool below →")
+                    
+                    st.divider()
+                    st.markdown("**🎯 Make Blanks:**")
+                    
+                    # Calculate the next blank number
+                    existing_blanks = re.findall(r"\{(\d+):", new_question_edit)
+                    next_blank_num = max([int(n) for n in existing_blanks] or [0]) + 1
+                    
+                    # Interactive blank maker (using HTML with proper escaping)
+                    html_content = """
+                    <div style="background-color: #f0f2f6; padding: 15px; border-radius: 8px;">
+                        <textarea id="fibTextarea""" + str(idx) + """" style="width: 100%; height: 80px; padding: 10px; font-family: monospace; border: 2px solid #ccc; border-radius: 4px; font-size: 14px;"></textarea>
+                        <div style="margin-top: 10px; display: flex; gap: 10px;">
+                            <button onclick="makeBlank""" + str(idx) + """()" style="padding: 8px 16px; background-color: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Make Blank</button>
+                            <button onclick="syncTextarea""" + str(idx) + """()" style="padding: 8px 16px; background-color: #666; color: white; border: none; border-radius: 4px; cursor: pointer;">Sync to Editor</button>
+                            <span id="status""" + str(idx) + """" style="margin-left: auto; color: #666; font-size: 12px;"></span>
+                        </div>
+                    </div>
+                    <script>
+                        let blankCounter""" + str(idx) + """ = """ + str(next_blank_num) + """;
+                        window.addEventListener('load', function() {
+                            document.getElementById("fibTextarea""" + str(idx) + """").value = `""" + new_question_edit.replace('`', '\\`') + """`;
+                        });
+                        
+                        function makeBlank""" + str(idx) + """() {
+                            let textarea = document.getElementById("fibTextarea""" + str(idx) + """");
+                            let start = textarea.selectionStart;
+                            let end = textarea.selectionEnd;
+                            let selected = textarea.value.substring(start, end);
+                            
+                            if (selected.trim().length === 0) {
+                                document.getElementById("status""" + str(idx) + """").textContent = "⚠️ Select text first!";
+                                return;
+                            }
+                            
+                            let replacement = "{" + blankCounter""" + str(idx) + """ + ":" + selected.trim() + "}";
+                            textarea.value = textarea.value.substring(0, start) + replacement + textarea.value.substring(end);
+                            blankCounter""" + str(idx) + """++;
+                            
+                            document.getElementById("status""" + str(idx) + """").textContent = "✓ Blank created!";
+                            setTimeout(() => { document.getElementById("status""" + str(idx) + """").textContent = ""; }, 2000);
+                            
+                            // Trigger Streamlit update
+                            textarea.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+                        
+                        function syncTextarea""" + str(idx) + """() {
+                            let textarea = document.getElementById("fibTextarea""" + str(idx) + """");
+                            textarea.dispatchEvent(new Event('change', { bubbles: true }));
+                            document.getElementById("status""" + str(idx) + """").textContent = "✓ Synced!";
+                            setTimeout(() => { document.getElementById("status""" + str(idx) + """").textContent = ""; }, 1500);
+                        }
+                    </script>
+                    """
+                    components.html(html_content, height=150)
+                    
+                    st.divider()
                     if st.button("💾 Save Changes", type="primary", use_container_width=True, key=f"save_fib_edit_{idx}"):
-                        c["question"] = new_question_edit.strip()
-                        save_data(st.session_state.data)
-                        st.session_state[f"editing_{idx}"] = False
-                        st.rerun()
+                        if new_question_edit.strip():
+                            c["question"] = new_question_edit.strip()
+                            save_data(st.session_state.data)
+                            st.session_state[f"editing_{idx}"] = False
+                            if f"fib_edit_state_{idx}" in st.session_state:
+                                del st.session_state[f"fib_edit_state_{idx}"]
+                            st.rerun()
+                        else:
+                            st.error("Question cannot be empty!")
 
 # Page: Review
 def render_review():
