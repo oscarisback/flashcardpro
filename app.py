@@ -747,105 +747,73 @@ def render_editor():
             fib_new_text = st.session_state.fib_new_state
             
             if fib_mode == "Simple Answer":
-                # Simple answer mode - just like Standard card
-                new_answer = st.text_area("Answer", height=100, key="fib_simple_answer")
+                # Simple answer mode - just Question and Answer
+                new_question = st.text_area("Question", value=new_question, height=100, key="fib_question_simple", placeholder="Enter your question")
+                new_answer = st.text_area("Answer", height=100, key="fib_answer_simple", placeholder="Enter the answer")
                 fib_question = new_question
             else:
-                # Blank creation mode
-                st.markdown("**Highlight text and click 'Make Blank' to create blanks**")
+                # Blank creation mode - pure Python approach
+                st.write("**Question**")
+                st.caption("Type your question, then add blanks below")
                 
-                # Two-column layout: single editor on left, preview on right
-                col_input, col_preview = st.columns([1, 1])
+                # Question textarea
+                fib_question = st.text_area(
+                    "",
+                    value=fib_new_text,
+                    key="fib_new_question",
+                    height=200,
+                    placeholder="Type or paste your question here..."
+                )
+                st.session_state.fib_new_state = fib_question
                 
-                with col_input:
-                    fib_question = st.text_area(
-                        "Question",
-                        value=fib_new_text,
-                        key="fib_new_question",
-                        height=250,
-                        placeholder="Type or paste your question here, then highlight text and click 'Make Blank' below →"
-                    )
-                    st.session_state.fib_new_state = fib_question
-                
-                with col_preview:
-                    st.markdown("**Live Preview:**")
-                    blanks = re.findall(r"\{(\d+):([^\}]+)\}", fib_question)
-                    
-                    if blanks:
-                        # Preview with answers
-                        preview_study = fib_question
-                        for num, ans in blanks:
-                            preview_study = preview_study.replace(f"{{{num}:{ans}}}", f"<span class='highlighted-answer'>{ans}</span>")
-                        st.markdown(preview_study, unsafe_allow_html=True)
-                        st.caption("📖 Study mode")
-                        
-                        st.divider()
-                        
-                        # Preview without answers
-                        preview_practice = fib_question
-                        for num, ans in blanks:
-                            preview_practice = preview_practice.replace(f"{{{num}:{ans}}}", "`[ ____ ]`")
-                        st.markdown(preview_practice)
-                        st.caption("🎯 Practice mode")
-                        
-                        st.success(f"✓ {len(blanks)} blank(s) ready!")
-                    else:
-                        st.info("No blanks yet. Highlight text and use the tool below →")
-                
-                st.divider()
-                st.markdown("**🎯 Make Blanks:**")
-                
-                # Calculate the next blank number
+                # Get existing blanks
                 existing_blanks = re.findall(r"\{(\d+):", fib_question)
                 next_blank_num = max([int(n) for n in existing_blanks] or [0]) + 1
                 
-                # Interactive blank maker (using HTML with proper escaping)
-                html_content = """
-                <div style="background-color: #f0f2f6; padding: 15px; border-radius: 8px;">
-                    <textarea id="fibTextareaNew" style="width: 100%; height: 80px; padding: 10px; font-family: monospace; border: 2px solid #ccc; border-radius: 4px; font-size: 14px;"></textarea>
-                    <div style="margin-top: 10px; display: flex; gap: 10px;">
-                        <button onclick="makeBlank()" style="padding: 8px 16px; background-color: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Make Blank</button>
-                        <button onclick="syncTextarea()" style="padding: 8px 16px; background-color: #666; color: white; border: none; border-radius: 4px; cursor: pointer;">Sync to Editor</button>
-                        <span id="status" style="margin-left: auto; color: #666; font-size: 12px;"></span>
-                    </div>
-                </div>
-                <script>
-                    let blankCounter = """ + str(next_blank_num) + """;
-                    window.addEventListener('load', function() {
-                        document.getElementById("fibTextareaNew").value = `""" + fib_question.replace('`', '\\`') + """`;
-                    });
+                # Add blank section
+                st.write("**Add Blank**")
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    text_to_blank = st.text_input("Text to make blank:", key="fib_blank_text", placeholder="Type the text you want to turn into a blank")
+                with col2:
+                    if st.button("Add Blank", use_container_width=True):
+                        if text_to_blank.strip():
+                            # Find and replace the text with blank format
+                            if text_to_blank in fib_question:
+                                fib_question = fib_question.replace(text_to_blank, f"{{{next_blank_num}:{text_to_blank}}}", 1)
+                                st.session_state.fib_new_state = fib_question
+                                st.success(f"✓ Blank created!")
+                                st.rerun()
+                            else:
+                                st.error(f"Text '{text_to_blank}' not found in question")
+                        else:
+                            st.warning("Please enter text to make blank")
+                
+                # Preview section below
+                st.divider()
+                st.write("**Preview**")
+                blanks = re.findall(r"\{(\d+):([^\}]+)\}", fib_question)
+                
+                if blanks:
+                    # Preview with answers
+                    preview_study = fib_question
+                    for num, ans in blanks:
+                        preview_study = preview_study.replace(f"{{{num}:{ans}}}", f"**{ans}**")
+                    st.markdown(preview_study)
+                    st.caption("📖 Study mode (answers shown)")
                     
-                    function makeBlank() {
-                        let textarea = document.getElementById("fibTextareaNew");
-                        let start = textarea.selectionStart;
-                        let end = textarea.selectionEnd;
-                        let selected = textarea.value.substring(start, end);
-                        
-                        if (selected.trim().length === 0) {
-                            document.getElementById("status").textContent = "⚠️ Select text first!";
-                            return;
-                        }
-                        
-                        let replacement = "{" + blankCounter + ":" + selected.trim() + "}";
-                        textarea.value = textarea.value.substring(0, start) + replacement + textarea.value.substring(end);
-                        blankCounter++;
-                        
-                        document.getElementById("status").textContent = "✓ Blank created!";
-                        setTimeout(() => { document.getElementById("status").textContent = ""; }, 2000);
-                        
-                        // Trigger Streamlit update
-                        textarea.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
+                    st.divider()
                     
-                    function syncTextarea() {
-                        let textarea = document.getElementById("fibTextareaNew");
-                        textarea.dispatchEvent(new Event('change', { bubbles: true }));
-                        document.getElementById("status").textContent = "✓ Synced!";
-                        setTimeout(() => { document.getElementById("status").textContent = ""; }, 1500);
-                    }
-                </script>
-                """
-                components.html(html_content, height=220)
+                    # Preview without answers
+                    preview_practice = fib_question
+                    for num, ans in blanks:
+                        preview_practice = preview_practice.replace(f"{{{num}:{ans}}}", "___")
+                    st.markdown(preview_practice)
+                    st.caption("🎯 Practice mode (fill blanks)")
+                    
+                    st.success(f"✓ {len(blanks)} blank(s) ready!")
+                else:
+                    st.info("No blanks yet. Enter text above and click 'Add Blank' to create blanks.")
 
         if st.button("💾 Add Card to Deck", type="primary", use_container_width=True, key="submit_add_card_btn"):
             if new_question.strip():
@@ -1009,101 +977,67 @@ def render_editor():
                     
                     fib_text = st.session_state[f"fib_edit_state_{idx}"]
                     
-                    st.markdown("**Select text below and click 'Make Blank' to create blanks**")
+                    st.write("**Question**")
+                    st.caption("Type your question, then add blanks below")
                     
-                    # Two-column layout: single editor on left, preview on right
-                    col_input, col_preview = st.columns([1, 1])
+                    # Question textarea
+                    new_question_edit = st.text_area(
+                        "",
+                        value=fib_text,
+                        key=f"edit_q_{idx}",
+                        height=200
+                    )
+                    st.session_state[f"fib_edit_state_{idx}"] = new_question_edit
                     
-                    with col_input:
-                        new_question_edit = st.text_area(
-                            "Question",
-                            value=fib_text,
-                            key=f"edit_q_{idx}",
-                            height=250
-                        )
-                        st.session_state[f"fib_edit_state_{idx}"] = new_question_edit
-                    
-                    with col_preview:
-                        st.markdown("**Live Preview:**")
-                        blanks = re.findall(r"\{(\d+):([^\}]+)\}", new_question_edit)
-                        
-                        if blanks:
-                            # Preview with answers
-                            preview_study = new_question_edit
-                            for num, ans in blanks:
-                                preview_study = preview_study.replace(f"{{{num}:{ans}}}", f"<span class='highlighted-answer'>{ans}</span>")
-                            st.markdown(preview_study, unsafe_allow_html=True)
-                            st.caption("📖 Study mode")
-                            
-                            st.divider()
-                            
-                            # Preview without answers
-                            preview_practice = new_question_edit
-                            for num, ans in blanks:
-                                preview_practice = preview_practice.replace(f"{{{num}:{ans}}}", "`[ ____ ]`")
-                            st.markdown(preview_practice)
-                            st.caption("🎯 Practice mode")
-                            
-                            st.success(f"✓ {len(blanks)} blank(s) ready!")
-                        else:
-                            st.info("No blanks yet. Highlight text and use the tool below →")
-                    
-                    st.divider()
-                    st.markdown("**🎯 Make Blanks:**")
-                    
-                    # Calculate the next blank number
+                    # Get existing blanks
                     existing_blanks = re.findall(r"\{(\d+):", new_question_edit)
                     next_blank_num = max([int(n) for n in existing_blanks] or [0]) + 1
                     
-                    # Interactive blank maker (using HTML with proper escaping)
-                    html_content = """
-                    <div style="background-color: #f0f2f6; padding: 15px; border-radius: 8px;">
-                        <textarea id="fibTextarea""" + str(idx) + """" style="width: 100%; height: 80px; padding: 10px; font-family: monospace; border: 2px solid #ccc; border-radius: 4px; font-size: 14px;"></textarea>
-                        <div style="margin-top: 10px; display: flex; gap: 10px;">
-                            <button onclick="makeBlank""" + str(idx) + """()" style="padding: 8px 16px; background-color: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Make Blank</button>
-                            <button onclick="syncTextarea""" + str(idx) + """()" style="padding: 8px 16px; background-color: #666; color: white; border: none; border-radius: 4px; cursor: pointer;">Sync to Editor</button>
-                            <span id="status""" + str(idx) + """" style="margin-left: auto; color: #666; font-size: 12px;"></span>
-                        </div>
-                    </div>
-                    <script>
-                        let blankCounter""" + str(idx) + """ = """ + str(next_blank_num) + """;
-                        window.addEventListener('load', function() {
-                            document.getElementById("fibTextarea""" + str(idx) + """").value = `""" + new_question_edit.replace('`', '\\`') + """`;
-                        });
-                        
-                        function makeBlank""" + str(idx) + """() {
-                            let textarea = document.getElementById("fibTextarea""" + str(idx) + """");
-                            let start = textarea.selectionStart;
-                            let end = textarea.selectionEnd;
-                            let selected = textarea.value.substring(start, end);
-                            
-                            if (selected.trim().length === 0) {
-                                document.getElementById("status""" + str(idx) + """").textContent = "⚠️ Select text first!";
-                                return;
-                            }
-                            
-                            let replacement = "{" + blankCounter""" + str(idx) + """ + ":" + selected.trim() + "}";
-                            textarea.value = textarea.value.substring(0, start) + replacement + textarea.value.substring(end);
-                            blankCounter""" + str(idx) + """++;
-                            
-                            document.getElementById("status""" + str(idx) + """").textContent = "✓ Blank created!";
-                            setTimeout(() => { document.getElementById("status""" + str(idx) + """").textContent = ""; }, 2000);
-                            
-                            // Trigger Streamlit update
-                            textarea.dispatchEvent(new Event('change', { bubbles: true }));
-                        }
-                        
-                        function syncTextarea""" + str(idx) + """() {
-                            let textarea = document.getElementById("fibTextarea""" + str(idx) + """");
-                            textarea.dispatchEvent(new Event('change', { bubbles: true }));
-                            document.getElementById("status""" + str(idx) + """").textContent = "✓ Synced!";
-                            setTimeout(() => { document.getElementById("status""" + str(idx) + """").textContent = ""; }, 1500);
-                        }
-                    </script>
-                    """
-                    components.html(html_content, height=220)
+                    # Add blank section
+                    st.write("**Add Blank**")
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        text_to_blank = st.text_input("Text to make blank:", key=f"fib_blank_text_{idx}", placeholder="Type the text you want to turn into a blank")
+                    with col2:
+                        if st.button("Add Blank", use_container_width=True, key=f"add_blank_btn_{idx}"):
+                            if text_to_blank.strip():
+                                # Find and replace the text with blank format
+                                if text_to_blank in new_question_edit:
+                                    new_question_edit = new_question_edit.replace(text_to_blank, f"{{{next_blank_num}:{text_to_blank}}}", 1)
+                                    st.session_state[f"fib_edit_state_{idx}"] = new_question_edit
+                                    st.success(f"✓ Blank created!")
+                                    st.rerun()
+                                else:
+                                    st.error(f"Text '{text_to_blank}' not found in question")
+                            else:
+                                st.warning("Please enter text to make blank")
                     
+                    # Preview section below
                     st.divider()
+                    st.write("**Preview**")
+                    blanks = re.findall(r"\{(\d+):([^\}]+)\}", new_question_edit)
+                    
+                    if blanks:
+                        # Preview with answers
+                        preview_study = new_question_edit
+                        for num, ans in blanks:
+                            preview_study = preview_study.replace(f"{{{num}:{ans}}}", f"**{ans}**")
+                        st.markdown(preview_study)
+                        st.caption("📖 Study mode (answers shown)")
+                        
+                        st.divider()
+                        
+                        # Preview without answers
+                        preview_practice = new_question_edit
+                        for num, ans in blanks:
+                            preview_practice = preview_practice.replace(f"{{{num}:{ans}}}", "___")
+                        st.markdown(preview_practice)
+                        st.caption("🎯 Practice mode (fill blanks)")
+                        
+                        st.success(f"✓ {len(blanks)} blank(s) ready!")
+                    else:
+                        st.info("No blanks yet. Enter text above and click 'Add Blank' to create blanks.")
+                    
                     if st.button("💾 Save Changes", type="primary", use_container_width=True, key=f"save_fib_edit_{idx}"):
                         if new_question_edit.strip():
                             c["question"] = new_question_edit.strip()
@@ -1203,44 +1137,78 @@ def render_review():
         else:  # Fill in Blank
             blanks = re.findall(r"\{(\d+):([^\}]+)\}", card["question"])
             
-            if not st.session_state.reveal_blanks:
-                display_text = card["question"]
-                for num, ans in blanks:
-                    display_text = display_text.replace(f"{{{num}:{ans}}}", " `[ ____ ]` ")
-                st.markdown(f"### {display_text}")
+            # Check if this is a Simple Answer mode FIB (no blanks in question, answer field is used)
+            if not blanks and card.get("answer"):
+                # Simple Answer mode - user types answer, then checks
+                st.markdown(f"### {card['question']}")
+                st.divider()
                 
-                user_inputs = {}
-                for num, ans in blanks:
-                    user_inputs[num] = (st.text_input(f"Blank #{num}:", key=f"blank_{idx}_{num}"), ans)
-
                 if not st.session_state.show_srs:
+                    user_answer = st.text_input("Your answer:", key=f"simple_fib_{idx}", placeholder="Type your answer here")
+                    
                     if st.button("Check Answer", use_container_width=True, type="primary"):
-                        st.session_state[f"last_fib_inputs_{idx}"] = user_inputs
-                        st.session_state.reveal_blanks = True
+                        st.session_state[f"last_simple_fib_{idx}"] = user_answer
                         st.session_state.show_srs = True
                         st.rerun()
-            else:
-                saved_inputs = st.session_state.get(f"last_fib_inputs_{idx}", {})
-                all_correct = True
-                
-                for num, (val, target) in saved_inputs.items():
-                    user_val = val.strip()
-                    target_val = target.strip()
-                    if user_val.lower() != target_val.lower():
-                        all_correct = False
-                        st.markdown(f"<div class='wrong-answer-highlight'>❌ Blank #{num} Incorrect: '{user_val}' (Correct: '{target_val}')</div>", unsafe_allow_html=True)
+                else:
+                    saved_answer = st.session_state.get(f"last_simple_fib_{idx}", "")
+                    correct_answer = card.get("answer", "").strip()
+                    
+                    user_answer_clean = saved_answer.strip()
+                    correct_answer_clean = correct_answer.strip()
+                    
+                    if user_answer_clean.lower() == correct_answer_clean.lower():
+                        st.markdown(f"<div class='correct-answer-highlight'>✅ Correct: '{correct_answer_clean}'</div>", unsafe_allow_html=True)
                     else:
-                        st.markdown(f"<div class='correct-answer-highlight'>✅ Blank #{num} Correct: '{target_val}'</div>", unsafe_allow_html=True)
-                
-                if all_correct and saved_inputs:
-                    st.success("🎉 All Blanks Correct!")
-                
-                display_text = card["question"]
-                for num, ans in blanks:
-                    display_text = display_text.replace(f"{{{num}:{ans}}}", f"<span class='highlighted-answer'>{ans}</span>")
-                st.markdown(f"### {display_text}", unsafe_allow_html=True)
-                
-                render_srs_controls(card)
+                        st.markdown(f"<div class='wrong-answer-highlight'>❌ Your Answer: '{user_answer_clean}'</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='correct-answer-highlight'>✅ Correct Answer: '{correct_answer_clean}'</div>", unsafe_allow_html=True)
+                    
+                    render_srs_controls(card)
+            
+            elif blanks:
+                # Blank format mode
+                if not st.session_state.reveal_blanks:
+                    display_text = card["question"]
+                    for num, ans in blanks:
+                        display_text = display_text.replace(f"{{{num}:{ans}}}", " `[ ____ ]` ")
+                    st.markdown(f"### {display_text}")
+                    
+                    user_inputs = {}
+                    for num, ans in blanks:
+                        user_inputs[num] = (st.text_input(f"Blank #{num}:", key=f"blank_{idx}_{num}"), ans)
+
+                    if not st.session_state.show_srs:
+                        if st.button("Check Answer", use_container_width=True, type="primary"):
+                            st.session_state[f"last_fib_inputs_{idx}"] = user_inputs
+                            st.session_state.reveal_blanks = True
+                            st.session_state.show_srs = True
+                            st.rerun()
+                else:
+                    saved_inputs = st.session_state.get(f"last_fib_inputs_{idx}", {})
+                    all_correct = True
+                    
+                    for num, (val, target) in saved_inputs.items():
+                        user_val = val.strip()
+                        target_val = target.strip()
+                        if user_val.lower() != target_val.lower():
+                            all_correct = False
+                            st.markdown(f"<div class='wrong-answer-highlight'>❌ Blank #{num} Incorrect: '{user_val}' (Correct: '{target_val}')</div>", unsafe_allow_html=True)
+                        else:
+                            st.markdown(f"<div class='correct-answer-highlight'>✅ Blank #{num} Correct: '{target_val}'</div>", unsafe_allow_html=True)
+                    
+                    if all_correct and saved_inputs:
+                        st.success("🎉 All Blanks Correct!")
+                    
+                    display_text = card["question"]
+                    for num, ans in blanks:
+                        display_text = display_text.replace(f"{{{num}:{ans}}}", f"**{ans}**")
+                    st.markdown(f"### {display_text}")
+                    
+                    render_srs_controls(card)
+            else:
+                # No blanks and no answer - just show question
+                st.markdown(f"### {card['question']}")
+                st.info("⚠️ No content to review for this card")
 
 def render_srs_controls(card):
     st.divider()
