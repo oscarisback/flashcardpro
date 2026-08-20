@@ -845,7 +845,7 @@ def render_editor():
                     }
                 </script>
                 """
-                components.html(html_content, height=150)
+                components.html(html_content, height=220)
 
         if st.button("💾 Add Card to Deck", type="primary", use_container_width=True, key="submit_add_card_btn"):
             if new_question.strip():
@@ -1101,7 +1101,7 @@ def render_editor():
                         }
                     </script>
                     """
-                    components.html(html_content, height=150)
+                    components.html(html_content, height=220)
                     
                     st.divider()
                     if st.button("💾 Save Changes", type="primary", use_container_width=True, key=f"save_fib_edit_{idx}"):
