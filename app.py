@@ -26,6 +26,10 @@ UPLOADS_DIR = os.path.join(BASE_DIR, "uploads")
 
 st.markdown("""
 <style>
+    /* Standardize Font Stack across Streamlit UI */
+    html, body, [class*="css"], textarea, button, input {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+    }
     .stButton button {
         border-radius: 8px;
         font-weight: 600;
@@ -173,16 +177,12 @@ def list_all_folder_paths(base_dict=None, current_prefix=None):
     return paths
 
 def move_deck(deck_name, source_path, target_path_str):
-    """Move a deck from source to target location"""
     try:
         cards = []
-        
-        # Remove from source
         if source_path == "unsorted":
             if deck_name in st.session_state.data["unsorted_decks"]:
                 cards = st.session_state.data["unsorted_decks"].pop(deck_name)
         else:
-            # source_path is a list like ["Folder1"] or ["Folder1", "Subfolder"]
             folder_dict = get_folder_dict(source_path[:-1]) if len(source_path) > 1 else st.session_state.data["files"]
             if folder_dict and source_path[-1] in folder_dict:
                 decks = folder_dict[source_path[-1]].get("decks", {})
@@ -191,9 +191,8 @@ def move_deck(deck_name, source_path, target_path_str):
         
         if not cards:
             st.error(f"Could not find deck '{deck_name}' to move")
-            return
+            return False
         
-        # Add to target
         if target_path_str == "Root (Unsorted)":
             st.session_state.data["unsorted_decks"][deck_name] = cards
         else:
@@ -205,7 +204,7 @@ def move_deck(deck_name, source_path, target_path_str):
                 target_dict[target_path[-1]]["decks"][deck_name] = cards
             else:
                 st.error(f"Target folder '{target_path_str}' not found")
-                return
+                return False
         
         save_data(st.session_state.data)
         return True
@@ -275,19 +274,7 @@ def move_folder(folder_name, source_path, target_path_str):
     
     save_data(st.session_state.data)
 
-# Compact Encoding Functions (for shorter export codes)
-def generate_short_export_code(data_dict):
-    """Generate a short, URL-safe export code"""
-    raw_json = json.dumps(data_dict, separators=(',', ':'), ensure_ascii=False).encode("utf-8")
-    compressed = zlib.compress(raw_json, level=9)
-    
-    # Use standard base64 but with URL-safe alphabet
-    encoded = base64.urlsafe_b64encode(compressed).decode("utf-8")
-    
-    # Take first 20 chars and make it readable (remove padding)
-    short_code = encoded.replace('_', '').replace('-', '')[:20]
-    return short_code
-
+# Compact Encoding Functions
 def export_deck_code(deck_name, cards):
     minified_cards = []
     for c in cards:
@@ -312,17 +299,6 @@ def export_deck_code(deck_name, cards):
         "c": minified_cards
     }
     
-    # Return full encoded data, not short code
-    raw_json = json.dumps(payload, separators=(',', ':'), ensure_ascii=False).encode("utf-8")
-    compressed = zlib.compress(raw_json, level=9)
-    return base64.urlsafe_b64encode(compressed).decode("utf-8")
-
-def export_deck_link(deck_name, cards, base_url="http://localhost:8501"):
-    encoded_code = export_deck_code(deck_name, cards)
-    return f"{base_url}/?deck={urllib.parse.quote(encoded_code)}"
-
-def export_folder_code(folder_name, folder_data):
-    payload = {"type": "folder", "n": folder_name, "data": folder_data}
     raw_json = json.dumps(payload, separators=(',', ':'), ensure_ascii=False).encode("utf-8")
     compressed = zlib.compress(raw_json, level=9)
     return base64.urlsafe_b64encode(compressed).decode("utf-8")
@@ -331,7 +307,6 @@ def import_any_code(encoded_code, target_path):
     try:
         clean_code = encoded_code.strip().encode("utf-8")
         
-        # Try different decoding methods
         decoded_bytes = None
         try:
             decoded_bytes = base64.urlsafe_b64decode(clean_code)
@@ -407,7 +382,6 @@ def render_home():
     
     check_and_handle_url_import()
     
-    # Initialize session state for dialogs
     if "show_create_deck" not in st.session_state:
         st.session_state.show_create_deck = False
     if "show_create_folder" not in st.session_state:
@@ -417,7 +391,6 @@ def render_home():
     
     col1, col2, col3 = st.columns([2, 2, 1])
     
-    # Create Deck
     with col1:
         if st.button("➕ Create Deck", use_container_width=True, key="btn_create_deck"):
             st.session_state.show_create_deck = not st.session_state.show_create_deck
@@ -441,7 +414,6 @@ def render_home():
                         st.session_state.show_create_deck = False
                         st.rerun()
     
-    # Create Folder
     with col2:
         if st.button("📁 Create Folder", use_container_width=True, key="btn_create_folder"):
             st.session_state.show_create_folder = not st.session_state.show_create_folder
@@ -465,7 +437,6 @@ def render_home():
                         st.session_state.show_create_folder = False
                         st.rerun()
     
-    # Import Deck
     with col3:
         if st.button("📤 Import", use_container_width=True, key="btn_import_deck"):
             st.session_state.show_import_deck = not st.session_state.show_import_deck
@@ -493,7 +464,6 @@ def render_home():
     
     st.divider()
     
-    # Display unsorted decks
     if st.session_state.data.get("unsorted_decks"):
         st.subheader("📇 Unsorted Decks")
         for deck_name, cards in st.session_state.data["unsorted_decks"].items():
@@ -546,7 +516,6 @@ def render_home():
                             st.session_state[f"show_options_{deck_name}_unsorted"] = False
                             st.rerun()
                     
-                    # Separate move dialog
                     if st.session_state.get(f"moving_{deck_name}_unsorted"):
                         st.divider()
                         with st.container(border=True):
@@ -571,13 +540,11 @@ def render_home():
                             else:
                                 st.info("📁 Create a folder first to move decks")
     
-    # Display folder structure
     def display_folder_tree(folder_dict, path=[]):
         for folder_name, folder_info in folder_dict.items():
             with st.expander(f"📁 {folder_name}", expanded=False):
                 current_path = path + [folder_name]
                 
-                # Decks in this folder
                 if "decks" in folder_info and folder_info["decks"]:
                     st.write("**Decks:**")
                     for deck_name, cards in folder_info["decks"].items():
@@ -629,7 +596,6 @@ def render_home():
                                     st.session_state[f"show_options_{deck_name}_{'/'.join(current_path)}"] = False
                                     st.rerun()
                             
-                            # Separate move dialog
                             if st.session_state.get(f"moving_{deck_name}_{'/'.join(current_path)}"):
                                 st.divider()
                                 with st.container(border=True):
@@ -653,18 +619,15 @@ def render_home():
                                     else:
                                         st.info("No destinations available")
                 
-                # Subfolders
                 if "folders" in folder_info and folder_info["folders"]:
                     display_folder_tree(folder_info["folders"], current_path)
                 
-                # Folder options
                 col_f1, col_f2 = st.columns(2)
                 with col_f1:
                     if st.button("Move Folder", key=f"move_folder_{folder_name}", use_container_width=True):
                         st.session_state[f"moving_folder_{folder_name}"] = not st.session_state.get(f"moving_folder_{folder_name}", False)
                         st.rerun()
                     
-                    # Move folder dialog
                     if st.session_state.get(f"moving_folder_{folder_name}"):
                         st.divider()
                         with st.container(border=True):
@@ -714,14 +677,20 @@ def render_editor():
     
     with st.expander("➕ Add New Card", expanded=True):
         card_type = st.radio("Card Type:", ["Standard", "Multiple Choice", "Fill in Blank"], horizontal=True, key="card_type_selector")
-        new_question = st.text_area("Question", height=100, key="new_q")
         
+        new_question = ""
         new_answer = ""
         new_options = []
         new_explanation = ""
-        uploaded_image = st.file_uploader("Upload image (optional)", type=["jpg", "jpeg", "png"])
+        uploaded_image = None
+
+        if card_type == "Standard":
+            new_question = st.text_area("Question", height=100, key="new_q")
+            new_answer = st.text_area("Answer", height=100, key="new_a")
+            uploaded_image = st.file_uploader("Upload image (optional)", type=["jpg", "jpeg", "png"], key="img_std")
         
-        if card_type == "Multiple Choice":
+        elif card_type == "Multiple Choice":
+            new_question = st.text_area("Question", height=100, key="new_q_mc")
             st.subheader("📋 Multiple Choice Options")
             num_options = st.number_input("Number of options:", min_value=2, max_value=10, value=4)
             new_options = []
@@ -732,97 +701,105 @@ def render_editor():
             
             new_answer = st.selectbox("✅ Correct Answer:", new_options if new_options else ["No options yet"], key="mc_ans")
             new_explanation = st.text_area("💡 Explanation (optional)", height=80, key="mc_exp")
-        
-        elif card_type == "Standard":
-            new_answer = st.text_area("Answer", height=100, key="new_a")
+            uploaded_image = st.file_uploader("Upload image (optional)", type=["jpg", "jpeg", "png"], key="img_mc")
         
         else:  # Fill in Blank
-            # Choose between blank mode or simple answer mode
             fib_mode = st.radio("Mode:", ["Create Blanks {1:answer}", "Simple Answer"], horizontal=True, key="fib_mode_selector")
+            uploaded_image = st.file_uploader("Upload image (optional)", type=["jpg", "jpeg", "png"], key="img_fib")
             
-            # Initialize FIB state for new card
             if "fib_new_state" not in st.session_state:
                 st.session_state.fib_new_state = ""
             
-            fib_new_text = st.session_state.fib_new_state
-            
             if fib_mode == "Simple Answer":
-                # Simple answer mode - just Question and Answer
-                new_question = st.text_area("Question", value=new_question, height=100, key="fib_question_simple", placeholder="Enter your question")
+                new_question = st.text_area("Question", height=100, key="fib_question_simple", placeholder="Enter your question")
                 new_answer = st.text_area("Answer", height=100, key="fib_answer_simple", placeholder="Enter the answer")
-                fib_question = new_question
             else:
-                # Blank creation mode - pure Python approach
-                st.write("**Question**")
-                st.caption("Type your question, then add blanks below")
+                st.write("**Highlight text to turn into a blank:**")
                 
-                # Question textarea
-                fib_question = st.text_area(
-                    "",
-                    value=fib_new_text,
-                    key="fib_new_question",
-                    height=200,
-                    placeholder="Type or paste your question here..."
-                )
-                st.session_state.fib_new_state = fib_question
+                # Single Window Highlight Component with Matched Typography and Increased Frame Height
+                highlight_component = f"""
+                <div style="font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+                    <textarea id="fib_input" style="width: 100%; height: 140px; padding: 10px; border-radius: 8px; border: 1px solid #ccc; font-size: 15px; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;" placeholder="Type your full sentence here, then highlight a word and click the button below...">{st.session_state.fib_new_state}</textarea>
+                    <br><br>
+                    <button id="blank_btn" style="background-color: #ff4b4b; color: white; border: none; padding: 6px 12px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+                        ✨ Turn Highlighted Text into Blank
+                    </button>
+                </div>
+
+                <script>
+                    const textarea = document.getElementById('fib_input');
+                    const btn = document.getElementById('blank_btn');
+
+                    btn.addEventListener('click', function() {{
+                        const start = textarea.selectionStart;
+                        const end = textarea.selectionEnd;
+                        const selectedText = textarea.value.substring(start, end);
+
+                        if (selectedText.trim() !== '') {{
+                            const currentText = textarea.value;
+                            const matches = currentText.match(/\{{\d+:/g) || [];
+                            const nextNum = matches.length + 1;
+                            
+                            const before = currentText.substring(0, start);
+                            const after = currentText.substring(end);
+                            
+                            textarea.value = before + '{{' + nextNum + ':' + selectedText + '}}' + after;
+                            
+                            // Dispatch input event so Streamlit registers changes
+                            textarea.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        }} else {{
+                            alert('Please highlight a word or phrase inside the text window first!');
+                        }}
+                    }});
+                </script>
+                """
                 
-                # Get existing blanks
-                existing_blanks = re.findall(r"\{(\d+):", fib_question)
-                next_blank_num = max([int(n) for n in existing_blanks] or [0]) + 1
+                # Render the single window editor with expanded container height (260px)
+                components.html(highlight_component, height=260)
                 
-                # Add blank section
-                st.write("**Add Blank**")
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    text_to_blank = st.text_input("Text to make blank:", key="fib_blank_text", placeholder="Type the text you want to turn into a blank")
-                with col2:
-                    if st.button("Add Blank", use_container_width=True):
-                        if text_to_blank.strip():
-                            # Find and replace the text with blank format
-                            if text_to_blank in fib_question:
-                                fib_question = fib_question.replace(text_to_blank, f"{{{next_blank_num}:{text_to_blank}}}", 1)
-                                st.session_state.fib_new_state = fib_question
-                                st.success(f"✓ Blank created!")
-                                st.rerun()
-                            else:
-                                st.error(f"Text '{text_to_blank}' not found in question")
-                        else:
-                            st.warning("Please enter text to make blank")
-                
-                # Preview section below
+                # Hidden text area syncs state back to Streamlit
+                new_question = st.text_area("Raw Output / Verification", value=st.session_state.fib_new_state, key="fib_new_question_area", height=100)
+                st.session_state.fib_new_state = new_question
+
                 st.divider()
                 st.write("**Preview**")
-                blanks = re.findall(r"\{(\d+):([^\}]+)\}", fib_question)
+                blanks = re.findall(r"\{(\d+):([^\}]+)\}", new_question)
                 
                 if blanks:
-                    # Preview with answers
-                    preview_study = fib_question
+                    preview_study = new_question
                     for num, ans in blanks:
                         preview_study = preview_study.replace(f"{{{num}:{ans}}}", f"**{ans}**")
                     st.markdown(preview_study)
-                    st.caption("📖 Study mode (answers shown)")
+                    st.caption("📖 Study mode preview")
                     
                     st.divider()
                     
-                    # Preview without answers
-                    preview_practice = fib_question
+                    preview_practice = new_question
                     for num, ans in blanks:
                         preview_practice = preview_practice.replace(f"{{{num}:{ans}}}", "___")
                     st.markdown(preview_practice)
-                    st.caption("🎯 Practice mode (fill blanks)")
+                    st.caption("🎯 Practice mode preview")
                     
-                    st.success(f"✓ {len(blanks)} blank(s) ready!")
+                    st.success(f"✓ {len(blanks)} blank(s) detected!")
                 else:
-                    st.info("No blanks yet. Enter text above and click 'Add Blank' to create blanks.")
+                    st.info("No blanks created yet. Highlight text above and click the button.")
 
         if st.button("💾 Add Card to Deck", type="primary", use_container_width=True, key="submit_add_card_btn"):
-            if new_question.strip():
+            final_question = st.session_state.get("fib_new_question_area", new_question) if card_type == "Fill in Blank" else new_question
+            
+            if final_question.strip():
                 if card_type == "Multiple Choice":
                     if not new_options:
                         st.error("Please add options for the multiple choice question!")
                         st.stop()
                     if new_answer.strip() not in new_options:
                         st.error("Correct answer must match one of the options!")
+                        st.stop()
+
+                if card_type == "Fill in Blank" and fib_mode == "Create Blanks {1:answer}":
+                    blanks_check = re.findall(r"\{(\d+):([^\}]+)\}", final_question)
+                    if not blanks_check:
+                        st.error("No blanks found! Highlight text to embed blanks first.")
                         st.stop()
 
                 image_path = None
@@ -834,7 +811,7 @@ def render_editor():
 
                 card_data = {
                     "type": card_type,
-                    "question": new_question.strip(),
+                    "question": final_question.strip(),
                     "image": image_path,
                     "interval": 1,
                     "ease_factor": 2.5,
@@ -848,12 +825,11 @@ def render_editor():
                     card_data["answer"] = new_answer.strip()
                     card_data["explanation"] = new_explanation.strip()
                 elif card_type == "Fill in Blank":
-                    # Check if it's simple answer mode or blank mode
-                    if st.session_state.get("fib_mode_selector") == "Simple Answer":
+                    if fib_mode == "Simple Answer":
                         card_data["answer"] = new_answer.strip()
                     else:
-                        # Blank mode - no simple answer field
                         card_data["answer"] = ""
+                        st.session_state.fib_new_state = ""
 
                 cards.append(card_data)
                 save_data(st.session_state.data)
@@ -898,7 +874,6 @@ def render_editor():
                         st.rerun()
 
                 elif c["type"] == "Multiple Choice":
-                    # Initialize the editing state for this card
                     if f"mc_edit_state_{idx}" not in st.session_state:
                         st.session_state[f"mc_edit_state_{idx}"] = {
                             "options": [str(opt).strip() for opt in c.get("options", []) if str(opt).strip()],
@@ -906,31 +881,25 @@ def render_editor():
                         }
                     
                     edit_state = st.session_state[f"mc_edit_state_{idx}"]
-                    
                     new_question_edit = st.text_area("Question", value=c.get("question", ""), key=f"edit_q_{idx}", height=100)
                     
                     st.subheader("📋 Manage Options")
-                    # Display existing options with delete buttons
                     options_to_delete = []
                     for opt_idx, opt in enumerate(edit_state["options"]):
                         opt_col1, opt_col2 = st.columns([4, 1])
                         with opt_col1:
                             new_val = st.text_input(f"Option {opt_idx + 1}", value=opt, key=f"opt_edit_{idx}_{opt_idx}")
-                            # Update the option in place
                             if new_val.strip():
                                 edit_state["options"][opt_idx] = new_val.strip()
                         with opt_col2:
                             if st.button("Delete", key=f"del_opt_{idx}_{opt_idx}", use_container_width=True, help="🗑️ Delete option"):
                                 options_to_delete.append(opt_idx)
                     
-                    # Handle deletions in reverse order to maintain correct indices
                     for opt_idx in sorted(options_to_delete, reverse=True):
                         deleted_option = edit_state["options"].pop(opt_idx)
-                        # If the deleted option was the answer, reset the answer
                         if edit_state["answer"] == deleted_option:
                             edit_state["answer"] = ""
                     
-                    # Add new option
                     st.write("**Add new option:**")
                     new_opt_col1, new_opt_col2 = st.columns([4, 1])
                     with new_opt_col1:
@@ -943,7 +912,6 @@ def render_editor():
                             elif new_option.strip() in edit_state["options"]:
                                 st.warning("This option already exists!")
                     
-                    # Select correct answer
                     if edit_state["options"]:
                         ans_idx = edit_state["options"].index(edit_state["answer"]) if edit_state["answer"] in edit_state["options"] else 0
                         new_answer_edit = st.selectbox("✅ Correct Answer", edit_state["options"], index=ans_idx, key=f"edit_a_{idx}")
@@ -971,72 +939,64 @@ def render_editor():
                             st.rerun()
 
                 else:  # Fill in Blank
-                    # Initialize FIB edit state if needed
                     if f"fib_edit_state_{idx}" not in st.session_state:
                         st.session_state[f"fib_edit_state_{idx}"] = c.get("question", "")
                     
                     fib_text = st.session_state[f"fib_edit_state_{idx}"]
                     
                     st.write("**Question**")
-                    st.caption("Type your question, then add blanks below")
+                    st.caption("Type your text below, then add blanks")
                     
-                    # Question textarea
                     new_question_edit = st.text_area(
-                        "",
+                        "Question Text",
                         value=fib_text,
                         key=f"edit_q_{idx}",
                         height=200
                     )
                     st.session_state[f"fib_edit_state_{idx}"] = new_question_edit
                     
-                    # Get existing blanks
                     existing_blanks = re.findall(r"\{(\d+):", new_question_edit)
                     next_blank_num = max([int(n) for n in existing_blanks] or [0]) + 1
                     
-                    # Add blank section
                     st.write("**Add Blank**")
                     col1, col2 = st.columns([3, 1])
                     with col1:
-                        text_to_blank = st.text_input("Text to make blank:", key=f"fib_blank_text_{idx}", placeholder="Type the text you want to turn into a blank")
+                        text_to_blank = st.text_input("Text to make blank:", key=f"fib_blank_text_{idx}", placeholder="Type phrase from above")
                     with col2:
                         if st.button("Add Blank", use_container_width=True, key=f"add_blank_btn_{idx}"):
                             if text_to_blank.strip():
-                                # Find and replace the text with blank format
                                 if text_to_blank in new_question_edit:
-                                    new_question_edit = new_question_edit.replace(text_to_blank, f"{{{next_blank_num}:{text_to_blank}}}", 1)
-                                    st.session_state[f"fib_edit_state_{idx}"] = new_question_edit
-                                    st.success(f"✓ Blank created!")
+                                    updated_q = new_question_edit.replace(text_to_blank, f"{{{next_blank_num}:{text_to_blank}}}", 1)
+                                    st.session_state[f"fib_edit_state_{idx}"] = updated_q
+                                    st.toast(f"✓ Blank created for '{text_to_blank}'!", icon="✅")
                                     st.rerun()
                                 else:
                                     st.error(f"Text '{text_to_blank}' not found in question")
                             else:
                                 st.warning("Please enter text to make blank")
                     
-                    # Preview section below
                     st.divider()
                     st.write("**Preview**")
                     blanks = re.findall(r"\{(\d+):([^\}]+)\}", new_question_edit)
                     
                     if blanks:
-                        # Preview with answers
                         preview_study = new_question_edit
                         for num, ans in blanks:
                             preview_study = preview_study.replace(f"{{{num}:{ans}}}", f"**{ans}**")
                         st.markdown(preview_study)
-                        st.caption("📖 Study mode (answers shown)")
+                        st.caption("📖 Study mode preview")
                         
                         st.divider()
                         
-                        # Preview without answers
                         preview_practice = new_question_edit
                         for num, ans in blanks:
                             preview_practice = preview_practice.replace(f"{{{num}:{ans}}}", "___")
                         st.markdown(preview_practice)
-                        st.caption("🎯 Practice mode (fill blanks)")
+                        st.caption("🎯 Practice mode preview")
                         
                         st.success(f"✓ {len(blanks)} blank(s) ready!")
                     else:
-                        st.info("No blanks yet. Enter text above and click 'Add Blank' to create blanks.")
+                        st.info("No blanks yet. Enter text above and click 'Add Blank'.")
                     
                     if st.button("💾 Save Changes", type="primary", use_container_width=True, key=f"save_fib_edit_{idx}"):
                         if new_question_edit.strip():
@@ -1059,6 +1019,7 @@ def render_review():
         st.success("🎉 You've finished all cards in this session!")
         if st.button("Return to Dashboard", type="primary"):
             navigate_to("home")
+            st.rerun()
         return
 
     card = cards[idx]
@@ -1082,6 +1043,7 @@ def render_review():
     with c_exit:
         if st.button("Exit Session", use_container_width=True):
             navigate_to("home")
+            st.rerun()
 
     with st.container(border=True):
         card_type = card.get("type", "Standard").upper()
@@ -1105,14 +1067,17 @@ def render_review():
         elif card["type"] == "Multiple Choice":
             st.markdown(f"### {card['question']}")
             
-            opt_key = f"mc_opts_{idx}_{st.session_state.active_deck}"
+            # Unique Key tied directly to specific card content prevents alignment bugs on shuffle
+            card_q_hash = str(hash(card['question']))
+            opt_key = f"mc_opts_{st.session_state.active_deck}_{card_q_hash}"
+            
             if opt_key not in st.session_state:
                 opts = card.get("options", []).copy()
                 random.shuffle(opts)
                 st.session_state[opt_key] = opts
             
             shuffled_opts = st.session_state[opt_key]
-            selected_opt = st.radio("Choose an answer:", shuffled_opts, key=f"mc_{idx}")
+            selected_opt = st.radio("Choose an answer:", shuffled_opts, key=f"mc_choice_{idx}_{card_q_hash}")
 
             if not st.session_state.show_srs:
                 if st.button("Check Answer", use_container_width=True, type="primary"):
@@ -1137,9 +1102,7 @@ def render_review():
         else:  # Fill in Blank
             blanks = re.findall(r"\{(\d+):([^\}]+)\}", card["question"])
             
-            # Check if this is a Simple Answer mode FIB (no blanks in question, answer field is used)
             if not blanks and card.get("answer"):
-                # Simple Answer mode - user types answer, then checks
                 st.markdown(f"### {card['question']}")
                 st.divider()
                 
@@ -1166,7 +1129,6 @@ def render_review():
                     render_srs_controls(card)
             
             elif blanks:
-                # Blank format mode
                 if not st.session_state.reveal_blanks:
                     display_text = card["question"]
                     for num, ans in blanks:
@@ -1206,7 +1168,6 @@ def render_review():
                     
                     render_srs_controls(card)
             else:
-                # No blanks and no answer - just show question
                 st.markdown(f"### {card['question']}")
                 st.info("⚠️ No content to review for this card")
 
