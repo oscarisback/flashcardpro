@@ -713,63 +713,75 @@ def render_editor():
                 st.write("**Question**")
                 st.caption("Type your text below, then highlight or enter text to turn into blanks")
                 
-                raw_fib_input = st.text_area(
-                    "Question Text",
-                    value=st.session_state.fib_new_state,
-                    key="fib_new_question_area",
-                    height=200,
-                    placeholder="Type or paste your full text here..."
-                )
-                st.session_state.fib_new_state = raw_fib_input
-                new_question = st.session_state.fib_new_state
+                st.write("**Highlight text to turn into a blank:**")
                 
-                existing_blanks = re.findall(r"\{(\d+):", new_question)
-                next_blank_num = max([int(n) for n in existing_blanks] or [0]) + 1
+                # Single Window Highlight Component with Matched Typography and Increased Frame Height
+                highlight_component = f"""
+                <div style="font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+                    <textarea id="fib_input" style="width: 100%; height: 140px; padding: 10px; border-radius: 8px; border: 1px solid #ccc; font-size: 15px; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;" placeholder="Type your full sentence here, then highlight a word and click the button below...">{st.session_state.fib_new_state}</textarea>
+                    <br><br>
+                    <button id="blank_btn" style="background-color: #ff4b4b; color: white; border: none; padding: 6px 12px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+                        ✨ Turn Highlighted Text into Blank
+                    </button>
+                </div>
+
+                <script>
+                    const textarea = document.getElementById('fib_input');
+                    const btn = document.getElementById('blank_btn');
+
+                    btn.addEventListener('click', function() {{
+                        const start = textarea.selectionStart;
+                        const end = textarea.selectionEnd;
+                        const selectedText = textarea.value.substring(start, end);
+
+                        if (selectedText.trim() !== '') {{
+                            const currentText = textarea.value;
+                            const matches = currentText.match(/\{{\d+:/g) || [];
+                            const nextNum = matches.length + 1;
+                            
+                            const before = currentText.substring(0, start);
+                            const after = currentText.substring(end);
+                            
+                            textarea.value = before + '{{' + nextNum + ':' + selectedText + '}}' + after;
+                            
+                            // Dispatch input event so Streamlit registers changes
+                            textarea.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        }} else {{
+                            alert('Please highlight a word or phrase inside the text window first!');
+                        }}
+                    }});
+                </script>
+                """
                 
-                st.write("**Add Blank**")
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    text_to_blank = st.text_input("Text to make blank:", key="fib_blank_text", placeholder="Type exact phrase from above")
-                with col2:
-                    if st.button("Add Blank", use_container_width=True, key="add_blank_create_btn"):
-                        if text_to_blank.strip():
-                            # Get the CURRENT text from the text_area, not the stale variable
-                            current_question = st.session_state.get("fib_new_question_area", new_question)
-                            if text_to_blank in current_question:
-                                updated_text = current_question.replace(text_to_blank, f"{{{next_blank_num}:{text_to_blank}}}", 1)
-                                st.session_state.fib_new_state = updated_text
-                                st.session_state.fib_new_question_area = updated_text
-                                st.toast(f"✓ Blank created for '{text_to_blank}'!", icon="✅")
-                                st.rerun()
-                            else:
-                                st.error(f"Text '{text_to_blank}' not found in the question above!")
-                        else:
-                            st.warning("Please enter text to make blank")
+                # Render the single window editor with expanded container height (260px)
+                components.html(highlight_component, height=260)
                 
+                # Hidden text area syncs state back to Streamlit
+                new_question = st.text_area("Raw Output / Verification", value=st.session_state.fib_new_state, key="fib_new_question_area", height=100)
+                st.session_state.fib_new_state = new_question
+
                 st.divider()
                 st.write("**Preview**")
-                # Use current text from text_area, not stale variable
-                current_question_preview = st.session_state.get("fib_new_question_area", new_question)
-                blanks = re.findall(r"\{(\d+):([^\}]+)\}", current_question_preview)
+                blanks = re.findall(r"\{(\d+):([^\}]+)\}", new_question)
                 
                 if blanks:
-                    preview_study = current_question_preview
+                    preview_study = new_question
                     for num, ans in blanks:
                         preview_study = preview_study.replace(f"{{{num}:{ans}}}", f"**{ans}**")
                     st.markdown(preview_study)
-                    st.caption("📖 Study mode preview (answers revealed)")
+                    st.caption("📖 Study mode preview")
                     
                     st.divider()
                     
-                    preview_practice = current_question_preview
+                    preview_practice = new_question
                     for num, ans in blanks:
                         preview_practice = preview_practice.replace(f"{{{num}:{ans}}}", "___")
                     st.markdown(preview_practice)
-                    st.caption("🎯 Practice mode preview (interactive blanks)")
+                    st.caption("🎯 Practice mode preview")
                     
                     st.success(f"✓ {len(blanks)} blank(s) detected!")
                 else:
-                    st.info("No blanks created yet. Enter target text and click 'Add Blank'.")
+                    st.info("No blanks created yet. Highlight text above and click the button.")
 
         if st.button("💾 Add Card to Deck", type="primary", use_container_width=True, key="submit_add_card_btn"):
             # Get the CURRENT question value, not stale variable
