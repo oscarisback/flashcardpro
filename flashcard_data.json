@@ -1,0 +1,298 @@
+{
+    "files": {
+        "CHI": {
+            "folders": {
+                "論仁論孝論君子": {
+                    "folders": {},
+                    "decks": {
+                        "背句子": [
+                            {
+                                "type": "Fill in Blank",
+                                "question": "子曰：「君子{1:不重則不威}；{2:學則不固}。{3:主忠信}。{4:無友不如己}者。{5:過則勿憚改} 。」 (《學而》第一)",
+                                "image": null,
+                                "interval": 1,
+                                "ease_factor": 2.5,
+                                "next_review": 1787050917.5267823
+                            }
+                        ]
+                    }
+                },
+                "魚我所欲也": {
+                    "folders": {},
+                    "decks": {
+                        "Mock Question": [
+                            {
+                                "type": "Typed Answer",
+                                "question": "故患有所不【辟】也",
+                                "image": null,
+                                "interval": 1,
+                                "ease_factor": 2.5,
+                                "next_review": 1787146972.993152,
+                                "answer": "逃避"
+                            },
+                            {
+                                "type": "Typed Answer",
+                                "question": "【蹴】爾而與之,乞人不屑也",
+                                "image": null,
+                                "interval": 1,
+                                "ease_factor": 2.5,
+                                "next_review": 1787147000.8506184,
+                                "answer": "用腳踐踏"
+                            },
+                            {
+                                "type": "Typed Answer",
+                                "question": "萬鍾於我何【加】焉?",
+                                "image": null,
+                                "interval": 1,
+                                "ease_factor": 2.5,
+                                "next_review": 1787147023.302709,
+                                "answer": "益處"
+                            },
+                            {
+                                "type": "Typed Answer",
+                                "question": "【鄉】為身死而不受。",
+                                "image": null,
+                                "interval": 1,
+                                "ease_factor": 2.5,
+                                "next_review": 1787147062.5416875,
+                                "answer": "從前 / 過去"
+                            },
+                            {
+                                "type": "Standard",
+                                "question": "如使人之所欲莫甚於生,則凡可以得生者,何不用也? (3分)",
+                                "image": null,
+                                "interval": 1,
+                                "ease_factor": 2.5,
+                                "next_review": 1787147099.5665472,
+                                "answer": "【譯文】假使人們所想要的東西沒有比生命更重要的,(1分) 那麼凡是可以用來求得生存的方法,(1分) 有甚麼不能採用呢?(1分)"
+                            },
+                            {
+                                "type": "Standard",
+                                "question": "非獨賢者有是心也,人皆有之,賢者能勿喪耳。",
+                                "image": null,
+                                "interval": 1,
+                                "ease_factor": 2.5,
+                                "next_review": 1787147117.8311858,
+                                "answer": "【譯文】不僅賢能的人有這種心(本心/重義之心),(1分) 人人都有這種心,(1分) 只是賢能的人能夠不喪失它罷了。(1分)"
+                            },
+                            {
+                                "type": "Standard",
+                                "question": "孟子在文章開首以「魚」和「熊掌」作比喻,論述了甚麼道理?試體會其論證效果。(4分)",
+                                "image": null,
+                                "interval": 1,
+                                "ease_factor": 2.5,
+                                "next_review": 1787147148.401962,
+                                "answer": "‧ 道理: 以「魚」比喻「生」,以「熊掌」比喻「義」。說明當「生」與「義」兩者不能同時兼得時,應\n該「捨生取義」。(2分)\n‧ 效果: 運用類比論證(比喻論證),用日常生活中常見的飲食抉擇(魚與熊掌)作比,使抽象的道德倫\n理道理(生與義)變得具體淺顯、通俗易懂,更容易說服讀者。(2分)"
+                            },
+                            {
+                                "type": "Multiple Choice",
+                                "question": "下列何者符合孟子文中所言「本心」的涵義?(2分)",
+                                "image": null,
+                                "interval": 1,
+                                "ease_factor": 2.5,
+                                "next_review": 1787147244.3715854,
+                                "options": [
+                                    "對物質享受的合理追求",
+                                    "人生來固有的羞惡廉恥之心(義)",
+                                    "求生的本能與避死的恐懼",
+                                    "對貧困親友的惻隱與施捨之心"
+                                ],
+                                "answer": "人生來固有的羞惡廉恥之心(義)",
+                                "explanation": ""
+                            },
+                            {
+                                "type": "Standard",
+                                "question": "孟子在文中提及「一單食,一豆羹」與「萬鍾」的例子,試回答以下問題:(6分)",
+                                "image": "C:\\Users\\Oscar Wong\\Desktop\\Coding Stuff\\Flashcards\\uploads\\Screenshot 2026-08-19 214819.png",
+                                "interval": 1,
+                                "ease_factor": 2.5,
+                                "next_review": 1787147344.287051,
+                                "answer": "(1) 原因:(2分)\n因為給予者態度輕蔑、呵斥甚至用腳踐踏食物,這傷害了受施者的尊嚴。(1分) 這說明人人皆有羞惡之心\n(自尊),寧死也不願接受帶有侮辱性的施捨。(1分)\n(2) 批評與論證手法:(4分)\n‧ 批評: 批評高官巨卿為了優厚的俸祿(萬鍾),便不辨禮義而接受,甚至為了住宅的華麗、妻妾的侍奉\n以及讓貧困認識感激自己,而放棄了原則與尊嚴。(2分)\n論證手法: 對比論證(將窮人寧死不受辱與高官為利益忘禮義作對比;或將過去寧死不受與今日為物欲\n接受作對比)。(2分)"
+                            }
+                        ]
+                    }
+                }
+            },
+            "decks": {}
+        },
+        "CHM": {
+            "folders": {},
+            "decks": {
+                "微觀世界(I)": [
+                    {
+                        "type": "Multiple Choice",
+                        "question": "下列哪項關於金屬鍵的描述最為準確",
+                        "answer": "金屬陽離子與離域電子(電子海)之間的靜電引力",
+                        "options": [
+                            "金屬陽離子與共享電子對之間的靜電引力",
+                            "金屬陽離子與離域電子(電子海)之間的靜電引力",
+                            "陰離子與陽離子之間的靜電引力",
+                            "分子與分子之間的微弱分子間力"
+                        ],
+                        "explanation": "解析:金屬鍵的定義為金屬陽離子與自由移動的「離域電子海」之間的靜電吸引力。",
+                        "image": null,
+                        "interval": 1,
+                        "ease_factor": 2.5,
+                        "next_review": 1787146475.2632895
+                    },
+                    {
+                        "type": "Multiple Choice",
+                        "question": "下列哪種分子的結構中含有共價雙鍵?",
+                        "answer": "二氧化碳 (CO2)",
+                        "options": [
+                            "氮氣 (N2)",
+                            "甲烷 (CH4)",
+                            "二氧化碳 (CO2)",
+                            "氯化氫 (HCl)"
+                        ],
+                        "explanation": "解析:二氧化碳 (CO2) 的分子結構為 O=C=O,碳原子與兩個氧原子之間均形成共價雙鍵。N2 含有三鍵,CH4 與 HCl 均只有單鍵。",
+                        "image": null,
+                        "interval": 1,
+                        "ease_factor": 2.5,
+                        "next_review": 1787146475.2632895
+                    },
+                    {
+                        "type": "Fill in Blank",
+                        "question": "爲何氯化鈉是堅硬且易碎的？\n因爲氯化鈉具{1:巨型離子結構}，它存有{2:鈉離子}及{3:氯離子}所組成的{4:強大離子鍵}。由於離子{5:相對移動}時會使{6:相同電荷的離子}靠近，所以它們會{7:互相排斥}",
+                        "image": null,
+                        "interval": 1,
+                        "ease_factor": 2.5,
+                        "next_review": 1787242499.0762146,
+                        "answer": ""
+                    },
+                    {
+                        "type": "Multiple Choice",
+                        "question": "關於元素週期表中鹵素由上至下的趨勢,下列哪項敘述是正確的?",
+                        "answer": "元素的熔點和沸點逐漸上升。",
+                        "options": [
+                            "元素的熔點和沸點逐漸上升。",
+                            "元素的化學反應性逐漸增加。",
+                            "原子的最外層電子數目逐漸增加。",
+                            "常溫常壓下的物理狀態由固態變為氣態。"
+                        ],
+                        "explanation": "解析:第 VII 族(鹵素)沿族向下,分子量及分子尺寸增大,分子間的範德華力增強,因此熔點和沸點上升。反應性沿族向下減弱;最外層電子數恆為 7;常溫下狀態由氣態(F , Cl )變為液態(Br )再變為固態(I )。",
+                        "image": null,
+                        "interval": 1,
+                        "ease_factor": 2.5,
+                        "next_review": 1787146475.2632895
+                    },
+                    {
+                        "type": "Multiple Choice",
+                        "question": "下列哪項關於MgF2與CCl4熔點比較的解釋是正確的?",
+                        "answer": "MgF2 的熔點較高,因為克服巨型晶體內的離子鍵所需的能量遠高於克服 CCl 分子間的作用力。",
+                        "options": [
+                            "MgF2 的熔點較高,因為克服巨型晶體內的離子鍵所需的能量遠高於克服 CCl 分子間的作用力。",
+                            "CCl4 的熔點較高,因為共價鍵強度高於離子鍵。",
+                            "兩者的熔點相相近,因為它們都含有非金屬元素。",
+                            "MgF2 的熔點較低,因為金屬與非金屬結合的穩定性較差。"
+                        ],
+                        "explanation": "解析:MgF2 為巨型離子結構,熔化時需要破壞強烈的離子鍵;CCl4 為簡單分子結構,熔化時僅需克服微弱的分子間力(範德華力),因此MgF2 的熔點遠高於 CCl4 。",
+                        "image": null,
+                        "interval": 1,
+                        "ease_factor": 2.5,
+                        "next_review": 1787146475.2632895
+                    },
+                    {
+                        "type": "Multiple Choice",
+                        "question": "元素 P(原子序數 12)與元素 Q(原子序數 7)反應形成化合物。該化合物的化學式是甚麼?",
+                        "answer": "P3Q2",
+                        "options": [
+                            "PQ",
+                            "P2Q3",
+                            "P3Q2",
+                            "P2Q"
+                        ],
+                        "explanation": "解析:P(原子序數 12,排佈 2,8,2)傾向失去 2 個電子形成 P2+ ;Q(原子序數 7,排佈 2,5)傾向得到 3 個電子形成 Q3- 。按電中性原則組合,化學式為 P Q 。",
+                        "image": null,
+                        "interval": 1,
+                        "ease_factor": 2.5,
+                        "next_review": 1787146475.2632895
+                    },
+                    {
+                        "type": "Multiple Choice",
+                        "question": "下列關於鹼金屬的描述,哪項是不正確的?",
+                        "answer": "把它們放入水中時會沉入水底並穩定溶解。",
+                        "options": [
+                            "它們能與水反應產生氫氣和鹼性溶液。",
+                            "沿族向下,金屬與水反應的劇烈程度逐漸增加。",
+                            "它們通常密度較低,可用小刀切開。",
+                            "把它們放入水中時會沉入水底並穩定溶解。"
+                        ],
+                        "explanation": "解析:常見鹼金屬(Li, Na, K)密度小於水,放入水中時會浮於水面上並劇烈反應(產生氫氣及鹼性氫氧化物溶液),而非沉入水底。",
+                        "image": null,
+                        "interval": 1,
+                        "ease_factor": 2.5,
+                        "next_review": 1787146475.2632895
+                    },
+                    {
+                        "type": "Multiple Choice",
+                        "question": "下列哪種物質在固態和熔融狀態下均不能導電?",
+                        "answer": "乙醇",
+                        "options": [
+                            "鐵",
+                            "石墨",
+                            "氯化鈉",
+                            "乙醇"
+                        ],
+                        "explanation": "解析:乙醇為簡單分子化合物,無可自由移動的離子或電子,固態及熔融態均不導電。鐵(金屬)在兩態下均能導電;石墨(巨型共價)含離域電子可導電;NaCl(離子化合物)在熔融態可導電。",
+                        "image": null,
+                        "interval": 1,
+                        "ease_factor": 2.5,
+                        "next_review": 1787146475.2632895
+                    },
+                    {
+                        "type": "Multiple Choice",
+                        "question": "元素 X 在自然界中有兩種同位素: 69X 和 71X。若 69X 的相對豐度為 60.0%,而 71X 的相對豐度為 40.0%, 求 X 的相對原子質量。",
+                        "answer": "69.8",
+                        "options": [
+                            "69.6",
+                            "69.8",
+                            "70.0",
+                            "70.2"
+                        ],
+                        "explanation": "解析:相對原子質量 = 加權平均值 = (69 × 60.0%) + (71 × 40.0%) = 41.4 + 28.4 = 69.8。",
+                        "image": null,
+                        "interval": 1,
+                        "ease_factor": 2.5,
+                        "next_review": 1787146475.2632895
+                    },
+                    {
+                        "type": "Multiple Choice",
+                        "question": "下列哪組元素/物質最可能具有巨型共價結構",
+                        "answer": "鑽石",
+                        "options": [
+                            "鑽石",
+                            "氯化鈉",
+                            "水",
+                            "鎂"
+                        ],
+                        "explanation": "解析:鑽石(碳)透過強烈的共價鍵交聯成三維巨型共價結構。NaCl 為巨型離子結構,H O 為簡單分子結構,Mg 為巨型金屬結構。",
+                        "image": null,
+                        "interval": 1,
+                        "ease_factor": 2.5,
+                        "next_review": 1787146475.2632895
+                    },
+                    {
+                        "type": "Multiple Choice",
+                        "question": "某離子 Y3+ 含有 10 個電子和 14 個中子。下列哪項關於元素 Y 的描述是正確的?",
+                        "answer": "Y 的質量數為 27。",
+                        "options": [
+                            "Y 的原子序數為 10。",
+                            "Y 的質量數為 27。",
+                            "Y 位於週期表的第 II 族。",
+                            "Y 的外層電子排佈為 2,8。"
+                        ],
+                        "explanation": "解析:Y3+ 離子含有 10 個電子,代表中性 Y 原子失去了 3 個電子,故 Y 的質子數(原子序數)為 10 + 3 = 13。質量數 = 質子數 + 中子數 = 13 + 14 = 27。電子排佈為 2,8,3,屬於第 III 族。",
+                        "image": null,
+                        "interval": 1,
+                        "ease_factor": 2.5,
+                        "next_review": 1787146475.2632895
+                    }
+                ]
+            }
+        }
+    },
+    "unsorted_decks": {
+        "aaa": []
+    }
+}
