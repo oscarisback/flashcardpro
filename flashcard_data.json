@@ -292,7 +292,5 @@
             }
         }
     },
-    "unsorted_decks": {
-        "aaa": []
-    }
+    "unsorted_decks": {}
 }

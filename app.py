@@ -6,6 +6,8 @@ import re
 import time
 import urllib.parse
 import zlib
+import datetime
+import string
 import streamlit as st
 import streamlit.components.v1 as components
 from PIL import Image
@@ -23,6 +25,7 @@ st.set_page_config(
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, "flashcard_data.json")
 UPLOADS_DIR = os.path.join(BASE_DIR, "uploads")
+DECK_DATABASE_PATH = os.path.join(BASE_DIR, "deck_codes.json")
 
 st.markdown("""
 <style>
@@ -77,6 +80,198 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Data Management
+# ===== DECK DATABASE FUNCTIONS (Shorter Codes) =====
+def generate_short_deck_code():
+    """Generate a unique 8-character alphanumeric code"""
+    while True:
+        code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+        if os.path.exists(DECK_DATABASE_PATH):
+            with open(DECK_DATABASE_PATH, 'r') as f:
+                try:
+                    db = json.load(f)
+                    if code not in db.get("decks", {}):
+                        return code
+                except:
+                    return code
+        else:
+            return code
+
+def load_deck_database():
+    """Load the deck code database"""
+    if os.path.exists(DECK_DATABASE_PATH):
+        with open(DECK_DATABASE_PATH, 'r') as f:
+            try:
+                return json.load(f)
+            except:
+                return {"decks": {}}
+    return {"decks": {}}
+
+def save_deck_database(db):
+    """Save the deck code database"""
+    with open(DECK_DATABASE_PATH, 'w') as f:
+        json.dump(db, f, indent=2)
+
+def export_deck_to_database(deck_name, cards):
+    """Export a single deck to database, return short code"""
+    try:
+        code = generate_short_deck_code()
+        db = load_deck_database()
+        
+        minified_cards = []
+        for c in cards:
+            card_data = {"t": c.get("type", "Standard"), "q": c.get("question", "")}
+            if "answer" in c and c["answer"]:
+                card_data["a"] = c["answer"]
+            if "options" in c and c["options"]:
+                card_data["o"] = c["options"]
+            if "explanation" in c and c["explanation"]:
+                card_data["e"] = c["explanation"]
+            minified_cards.append(card_data)
+        
+        db["decks"][code] = {
+            "name": deck_name,
+            "created": datetime.datetime.now().isoformat(),
+            "cards": minified_cards
+        }
+        
+        save_deck_database(db)
+        return code, True
+    except Exception as e:
+        return None, False
+
+def import_deck_from_database(deck_code):
+    """Import deck from short code"""
+    try:
+        db = load_deck_database()
+        if deck_code in db.get("decks", {}):
+            deck_data = db["decks"][deck_code]
+            deck_name = deck_data.get("name", "Imported Deck")
+            cards = []
+            for c in deck_data.get("cards", []):
+                card = {
+                    "type": c.get("t", "Standard"),
+                    "question": c.get("q", ""),
+                    "answer": c.get("a", ""),
+                    "options": c.get("o", []),
+                    "explanation": c.get("e", ""),
+                    "image": None,
+                    "interval": 1,
+                    "ease_factor": 2.5,
+                    "next_review": time.time()
+                }
+                cards.append(card)
+            return True, deck_name, cards
+        return False, None, None
+    except:
+        return False, None, None
+
+def export_folder_to_database(folder_name, folder_data):
+    """Export entire folder to database with short code"""
+    try:
+        code = generate_short_deck_code()
+        db = load_deck_database()
+        
+        # Minify all cards in all decks in the folder
+        minified_folder = {"folders": {}, "decks": {}}
+        
+        # Minify subfolders
+        for subfolder_name, subfolder_data in folder_data.get("folders", {}).items():
+            minified_folder["folders"][subfolder_name] = subfolder_data
+        
+        # Minify decks
+        for deck_name, cards in folder_data.get("decks", {}).items():
+            minified_cards = []
+            for c in cards:
+                card_data = {"t": c.get("type", "Standard"), "q": c.get("question", "")}
+                if "answer" in c and c["answer"]:
+                    card_data["a"] = c["answer"]
+                if "options" in c and c["options"]:
+                    card_data["o"] = c["options"]
+                if "explanation" in c and c["explanation"]:
+                    card_data["e"] = c["explanation"]
+                minified_cards.append(card_data)
+            minified_folder["decks"][deck_name] = minified_cards
+        
+        db["decks"][code] = {
+            "type": "folder",
+            "name": folder_name,
+            "created": datetime.datetime.now().isoformat(),
+            "data": minified_folder
+        }
+        
+        save_deck_database(db)
+        return code, True
+    except Exception as e:
+        return None, False
+
+def import_folder_from_database(folder_code):
+    """Import folder from short code"""
+    try:
+        db = load_deck_database()
+        if folder_code in db.get("decks", {}):
+            folder_data = db["decks"][folder_code]
+            if folder_data.get("type") == "folder":
+                folder_name = folder_data.get("name", "Imported Folder")
+                folder_content = folder_data.get("data", {})
+                
+                # Unminify cards
+                unminified_folder = {"folders": {}, "decks": {}}
+                
+                for subfolder_name, subfolder_data in folder_content.get("folders", {}).items():
+                    unminified_folder["folders"][subfolder_name] = subfolder_data
+                
+                for deck_name, cards in folder_content.get("decks", {}).items():
+                    unminified_cards = []
+                    for c in cards:
+                        card = {
+                            "type": c.get("t", "Standard"),
+                            "question": c.get("q", ""),
+                            "answer": c.get("a", ""),
+                            "options": c.get("o", []),
+                            "explanation": c.get("e", ""),
+                            "image": None,
+                            "interval": 1,
+                            "ease_factor": 2.5,
+                            "next_review": time.time()
+                        }
+                        unminified_cards.append(card)
+                    unminified_folder["decks"][deck_name] = unminified_cards
+                
+                return True, folder_name, unminified_folder
+        return False, None, None
+    except:
+        return False, None, None
+
+def get_all_folder_cards(folder_data):
+    """Get all cards from a folder (including subfolders)"""
+    all_cards = []
+    
+    # Get cards from main folder decks
+    for deck_name, cards in folder_data.get("decks", {}).items():
+        for card in cards:
+            card_with_source = card.copy()
+            card_with_source["_source"] = f"📚 {deck_name}"
+            all_cards.append(card_with_source)
+    
+    # Get cards from subfolders
+    def get_subfolder_cards(subfolder_data, prefix=""):
+        cards = []
+        for deck_name, deck_cards in subfolder_data.get("decks", {}).items():
+            for card in deck_cards:
+                card_with_source = card.copy()
+                card_with_source["_source"] = f"📁 {prefix}{deck_name}"
+                cards.append(card_with_source)
+        
+        for subfolder_name, subdata in subfolder_data.get("folders", {}).items():
+            cards.extend(get_subfolder_cards(subdata, f"{prefix}{subfolder_name}/"))
+        
+        return cards
+    
+    for subfolder_name, subfolder_data in folder_data.get("folders", {}).items():
+        all_cards.extend(get_subfolder_cards(subfolder_data, f"{subfolder_name}/"))
+    
+    return all_cards
+
 def load_data():
     if os.path.exists(DATA_FILE):
         try:
@@ -462,6 +657,56 @@ def render_home():
                         st.session_state.show_import_deck = False
                         st.rerun()
     
+    # File Export/Import Section
+    with col1:
+        if st.button("💾 Export File", use_container_width=True, key="btn_export_file"):
+            json_str = json.dumps(st.session_state.data, indent=2)
+            st.download_button(
+                label="📥 Download flashcard_data.json",
+                data=json_str,
+                file_name="flashcard_data.json",
+                mime="application/json",
+                key="download_file_btn"
+            )
+    
+    with col2:
+        if st.button("📂 Import File", use_container_width=True, key="btn_import_file"):
+            st.session_state.show_import_file = not st.session_state.get("show_import_file", False)
+        
+        if st.session_state.get("show_import_file"):
+            with st.container(border=True):
+                uploaded_file = st.file_uploader("Choose a flashcard_data.json file", type=["json"], key="file_upload_input")
+                if uploaded_file:
+                    try:
+                        imported_data = json.load(uploaded_file)
+                        col_a, col_b = st.columns(2)
+                        with col_a:
+                            if st.button("Import & Merge", use_container_width=True, key="btn_confirm_file_import"):
+                                # Merge the imported data
+                                for folder_name, folder_data in imported_data.get("files", {}).items():
+                                    if folder_name not in st.session_state.data["files"]:
+                                        st.session_state.data["files"][folder_name] = folder_data
+                                    else:
+                                        # Merge folders and decks
+                                        for subfolder_name, subfolder_data in folder_data.get("folders", {}).items():
+                                            st.session_state.data["files"][folder_name]["folders"][subfolder_name] = subfolder_data
+                                        for deck_name, deck_cards in folder_data.get("decks", {}).items():
+                                            st.session_state.data["files"][folder_name]["decks"][deck_name] = deck_cards
+                                
+                                for deck_name, deck_cards in imported_data.get("unsorted_decks", {}).items():
+                                    st.session_state.data["unsorted_decks"][deck_name] = deck_cards
+                                
+                                save_data(st.session_state.data)
+                                st.success("✅ File imported and merged successfully!")
+                                st.session_state.show_import_file = False
+                                st.rerun()
+                        with col_b:
+                            if st.button("Cancel", use_container_width=True, key="btn_cancel_file_import"):
+                                st.session_state.show_import_file = False
+                                st.rerun()
+                    except Exception as e:
+                        st.error(f"Error reading file: {str(e)}")
+    
     st.divider()
     
     if st.session_state.data.get("unsorted_decks"):
@@ -544,6 +789,65 @@ def render_home():
         for folder_name, folder_info in folder_dict.items():
             with st.expander(f"📁 {folder_name}", expanded=False):
                 current_path = path + [folder_name]
+                
+                # Folder-level buttons
+                st.write("**Folder Actions:**")
+                fcol1, fcol2, fcol3, fcol4 = st.columns(4)
+                
+                with fcol1:
+                    if st.button("📚 Review All", key=f"review_all_{folder_name}_{'/'.join(current_path)}", use_container_width=True):
+                        all_cards = get_all_folder_cards(folder_info)
+                        if all_cards:
+                            st.session_state.review_cards = all_cards
+                            st.session_state.review_idx = 0
+                            st.session_state.show_ans = False
+                            st.session_state.show_srs = False
+                            st.session_state.review_mode = "study"
+                            navigate_to("review", f"All in {folder_name}", current_path)
+                            st.rerun()
+                        else:
+                            st.warning("No cards in this folder")
+                
+                with fcol2:
+                    if st.button("📤 Export Folder", key=f"export_folder_{folder_name}_{'/'.join(current_path)}", use_container_width=True):
+                        code, success = export_folder_to_database(folder_name, folder_info)
+                        if success:
+                            st.success(f"✅ Folder exported!")
+                            st.code(code, language="text")
+                            st.write(f"**Share this code:** `{code}`")
+                        else:
+                            st.error("Export failed")
+                
+                with fcol3:
+                    if st.button("📥 Import Folder", key=f"import_folder_{folder_name}_{'/'.join(current_path)}", use_container_width=True):
+                        st.session_state[f"show_import_folder_{folder_name}"] = not st.session_state.get(f"show_import_folder_{folder_name}", False)
+                        st.rerun()
+                
+                if st.session_state.get(f"show_import_folder_{folder_name}"):
+                    with st.container(border=True):
+                        import_code = st.text_input(f"Enter folder code to import:", key=f"import_folder_code_{folder_name}")
+                        icol1, icol2 = st.columns(2)
+                        with icol1:
+                            if st.button("Import", use_container_width=True, key=f"confirm_import_folder_{folder_name}"):
+                                if import_code.strip():
+                                    success, imported_folder_name, imported_data = import_folder_from_database(import_code.strip())
+                                    if success:
+                                        # Add imported folder to current folder
+                                        folder_info["folders"][imported_folder_name] = imported_data
+                                        save_data(st.session_state.data)
+                                        st.success(f"✅ Imported '{imported_folder_name}'!")
+                                        st.session_state[f"show_import_folder_{folder_name}"] = False
+                                        st.rerun()
+                                    else:
+                                        st.error("❌ Code not found")
+                                else:
+                                    st.error("Enter a code")
+                        with icol2:
+                            if st.button("Cancel", use_container_width=True, key=f"cancel_import_folder_{folder_name}"):
+                                st.session_state[f"show_import_folder_{folder_name}"] = False
+                                st.rerun()
+                
+                st.divider()
                 
                 if "decks" in folder_info and folder_info["decks"]:
                     st.write("**Decks:**")
@@ -758,8 +1062,25 @@ def render_editor():
                 components.html(highlight_component, height=260)
                 
                 # Hidden text area syncs state back to Streamlit
-                new_question = st.text_area("Raw Output / Verification", value=st.session_state.fib_new_state, key="fib_new_question_area", height=100)
-                st.session_state.fib_new_state = new_question
+                col_raw, col_undo = st.columns([4, 1])
+                with col_raw:
+                    new_question = st.text_area("Raw Output / Verification", value=st.session_state.fib_new_state, key="fib_new_question_area", height=100)
+                    st.session_state.fib_new_state = new_question
+                with col_undo:
+                    st.write("")  # spacing
+                    if st.button("↶ Undo", use_container_width=True, key="undo_blank_btn"):
+                        if "fib_history" in st.session_state and len(st.session_state.fib_history) > 1:
+                            st.session_state.fib_history.pop()  # Remove current state
+                            st.session_state.fib_new_state = st.session_state.fib_history[-1]
+                            st.rerun()
+                        else:
+                            st.warning("Nothing to undo")
+                
+                # Track history for undo
+                if "fib_history" not in st.session_state:
+                    st.session_state.fib_history = [st.session_state.fib_new_state]
+                elif st.session_state.fib_new_state != st.session_state.fib_history[-1]:
+                    st.session_state.fib_history.append(st.session_state.fib_new_state)
 
                 st.divider()
                 st.write("**Preview**")
