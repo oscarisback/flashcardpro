@@ -116,7 +116,26 @@
             "decks": {}
         },
         "CHM": {
-            "folders": {},
+            "folders": {
+                "論仁論孝論君子": {
+                    "folders": {},
+                    "decks": {
+                        "背句子": [
+                            {
+                                "type": "Fill in Blank",
+                                "question": "子曰：「君子{1:不重則不威}；{2:學則不固}。{3:主忠信}。{4:無友不如己}者。{5:過則勿憚改} 。」 (《學而》第一)",
+                                "answer": "",
+                                "options": [],
+                                "explanation": "",
+                                "image": null,
+                                "interval": 1,
+                                "ease_factor": 2.5,
+                                "next_review": 1787494237.4566865
+                            }
+                        ]
+                    }
+                }
+            },
             "decks": {
                 "微觀世界(I)": [
                     {
